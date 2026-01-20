@@ -1,0 +1,142 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <Content Include="favicon.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ADS.WindowsAuth.Core\ADS.WindowsAuth.Core.csproj" />
+    <ProjectReference Include="..\ADS.WindowsAuth.CredentialProvider\ADS.WindowsAuth.CredentialProvider.vcxproj" />
+    <ProjectReference Include="..\ADS.WindowsAuth.Monitor\ADS.WindowsAuth.Monitor.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="QRCoder" Version="1.7.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Копиране на appsettings.json в output директорията -->
+    <None Include="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- Копиране на appsettings.Development.json само в Debug режим -->
+    <None Include="appsettings.Development.json" Condition="'$(Configuration)' == 'Debug'">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="C:\Users\ahmed.NURSAN\Pictures\Screenshot 2025-10-02 113836.png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+  </ItemGroup>
+
+  <!-- Автоматично копиране на CredentialProvider DLL в output директорията -->
+  <Target Name="CopyCredentialProviderDll" AfterTargets="Build">
+    <PropertyGroup>
+      <CredentialProviderDllPath Condition="'$(Configuration)' == 'Release'">$(SolutionDir)bin\x64\Release\ADS.WindowsAuth.CredentialProvider.dll</CredentialProviderDllPath>
+      <CredentialProviderDllPath Condition="'$(Configuration)' == 'Debug'">$(SolutionDir)bin\x64\Debug\ADS.WindowsAuth.CredentialProvider.dll</CredentialProviderDllPath>
+    </PropertyGroup>
+    
+    <ItemGroup>
+      <CredentialProviderDll Include="$(CredentialProviderDllPath)" Condition="Exists('$(CredentialProviderDllPath)')" />
+    </ItemGroup>
+    
+    <Copy SourceFiles="@(CredentialProviderDll)" 
+          DestinationFolder="$(OutputPath)" 
+          SkipUnchangedFiles="true"
+          Condition="'@(CredentialProviderDll)' != ''">
+      <Output TaskParameter="CopiedFiles" ItemName="CopiedCredentialProviderDll" />
+    </Copy>
+    
+    <Message Text="CredentialProvider DLL копиран: @(CopiedCredentialProviderDll)" 
+             Condition="'@(CopiedCredentialProviderDll)' != ''" 
+             Importance="high" />
+    <Warning Text="CredentialProvider DLL не е намерен на: $(CredentialProviderDllPath). Моля, компилирай CredentialProvider проекта първо." 
+             Condition="'@(CredentialProviderDll)' == ''" />
+  </Target>
+
+  <!-- Автоматично копиране на Monitor EXE и неговите файлове в output директорията -->
+  <!-- Не копираме при publish, за да избегнем конфликт с appsettings.json -->
+  <Target Name="CopyMonitorFiles" AfterTargets="Build" Condition="'$(PublishProfile)' == '' AND '$(IsPublishing)' != 'true'">
+    <PropertyGroup>
+      <MonitorOutputPath Condition="'$(Configuration)' == 'Release'">$(SolutionDir)ADS.WindowsAuth.Monitor\bin\Release\net8.0-windows8.0</MonitorOutputPath>
+      <MonitorOutputPath Condition="'$(Configuration)' == 'Debug'">$(SolutionDir)ADS.WindowsAuth.Monitor\bin\Debug\net8.0-windows8.0</MonitorOutputPath>
+    </PropertyGroup>
+    
+    <!-- Копиране на Monitor EXE -->
+    <ItemGroup>
+      <MonitorExe Include="$(MonitorOutputPath)\ADS.WindowsAuth.Monitor.exe" Condition="Exists('$(MonitorOutputPath)\ADS.WindowsAuth.Monitor.exe')" />
+    </ItemGroup>
+    
+    <Copy SourceFiles="@(MonitorExe)" 
+          DestinationFolder="$(OutputPath)" 
+          SkipUnchangedFiles="true"
+          Condition="'@(MonitorExe)' != ''">
+      <Output TaskParameter="CopiedFiles" ItemName="CopiedMonitorExe" />
+    </Copy>
+    
+    <Message Text="Monitor EXE копиран: @(CopiedMonitorExe)" 
+             Condition="'@(CopiedMonitorExe)' != ''" 
+             Importance="high" />
+    <Warning Text="Monitor EXE не е намерен на: $(MonitorOutputPath)\ADS.WindowsAuth.Monitor.exe. Моля, компилирай Monitor проекта първо." 
+             Condition="'@(MonitorExe)' == ''" />
+    
+    <!-- Копиране на всички DLL файлове от Monitor проекта -->
+    <ItemGroup>
+      <MonitorDlls Include="$(MonitorOutputPath)\*.dll" Condition="Exists('$(MonitorOutputPath)')" />
+    </ItemGroup>
+    
+    <Copy SourceFiles="@(MonitorDlls)" 
+          DestinationFolder="$(OutputPath)" 
+          SkipUnchangedFiles="true"
+          Condition="'@(MonitorDlls)' != ''">
+      <Output TaskParameter="CopiedFiles" ItemName="CopiedMonitorDlls" />
+    </Copy>
+    
+    <Message Text="Monitor DLL файлове копирани: @(CopiedMonitorDlls)" 
+             Condition="'@(CopiedMonitorDlls)' != ''" 
+             Importance="high" />
+    
+    <!-- Копиране на appsettings.json от Monitor проекта -->
+    <!-- НЕ копираме при publish за да избегнем конфликт -->
+    <ItemGroup>
+      <MonitorConfig Include="$(SolutionDir)ADS.WindowsAuth.Monitor\appsettings.json" Condition="Exists('$(SolutionDir)ADS.WindowsAuth.Monitor\appsettings.json') AND '$(IsPublishing)' != 'true'" />
+      <MonitorConfigDev Include="$(SolutionDir)ADS.WindowsAuth.Monitor\appsettings.Development.json" Condition="Exists('$(SolutionDir)ADS.WindowsAuth.Monitor\appsettings.Development.json') AND '$(Configuration)' == 'Debug' AND '$(IsPublishing)' != 'true'" />
+    </ItemGroup>
+    
+    <Copy SourceFiles="@(MonitorConfig)" 
+          DestinationFolder="$(OutputPath)Monitor" 
+          SkipUnchangedFiles="true"
+          Condition="'@(MonitorConfig)' != '' AND '$(IsPublishing)' != 'true'" />
+    
+    <Copy SourceFiles="@(MonitorConfigDev)" 
+          DestinationFolder="$(OutputPath)Monitor" 
+          SkipUnchangedFiles="true"
+          Condition="'@(MonitorConfigDev)' != '' AND '$(IsPublishing)' != 'true'" />
+  </Target>
+
+  <ItemGroup>
+    <Compile Update="Properties\Resources.Designer.cs">
+      <DesignTime>True</DesignTime>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Update="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>favicon.ico</ApplicationIcon>
+    <PackageIcon>Screenshot 2025-10-02 113836.png</PackageIcon>
+  </PropertyGroup>
+
+</Project>

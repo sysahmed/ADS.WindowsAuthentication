@@ -1,0 +1,102 @@
+@{
+    ViewData["Title"] = "Remote Desktop - Активни Машини";
+}
+
+<div class="container mt-5 mb-5">
+    <div class="row mb-4">
+        <div class="col-md-12 text-center fade-in">
+            <h1 class="display-4 mb-3" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-weight: 800;">
+                🖥️ Remote Desktop
+            </h1>
+            <p class="lead text-white" style="text-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+                Управление на активни remote desktop сесии
+            </p>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="glass-card scale-in text-center">
+                <div class="d-flex align-items-center justify-content-center gap-3 flex-wrap">
+                    <div>
+                        <i class="bi bi-box-arrow-in-right" style="font-size: 2rem; color: var(--primary);"></i>
+                    </div>
+                    <div class="text-start">
+                        <h5 class="mb-1">Свържи се директно</h5>
+                        <p class="text-muted mb-0 small">Имаш Session ID? Свържи се директно към машината</p>
+                    </div>
+                    <a href="@Url.Action("Connect")" class="btn btn-primary btn-lg">
+                        <i class="bi bi-plug"></i> Свържи се с Session ID
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-12">
+            <div class="glass-card fade-in" style="animation-delay: 0.1s;">
+                <div class="d-flex align-items-center justify-content-between mb-4">
+                    <div class="d-flex align-items-center">
+                        <div style="font-size: 2rem; margin-right: 1rem;">📡</div>
+                        <h5 class="mb-0">Активни Remote Desktop Сесии</h5>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="spinner-border spinner-border-sm text-primary" role="status" id="refreshSpinner" style="display: none;">
+                            <span class="visually-hidden">Обновяване...</span>
+                        </div>
+                        <small class="text-muted">Auto-refresh: 5s</small>
+                    </div>
+                </div>
+
+                <div id="sessionsContainer">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                            <span class="visually-hidden">Зареждане...</span>
+                        </div>
+                        <p class="text-muted mt-3">Зареждане на сесии...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <div class="glass-card fade-in" style="animation-delay: 0.2s;">
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <a href="/" class="btn btn-outline-primary">
+                        <i class="bi bi-house"></i> Начало
+                    </a>
+                    <div class="ms-auto">
+                        <small class="text-muted">
+                            <i class="bi bi-info-circle"></i> 
+                            Кликнете на Session ID за копиране
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+<script src="/js/remote-desktop.js"></script>
+<script>
+    // Initialize with service URL (using existing variable from remote-desktop.js)
+    const remoteServiceUrl = '@ViewData["ServiceUrl"]';
+    initRemoteDesktop(remoteServiceUrl);
+    
+    // Show spinner during refresh
+    const originalLoad = window.loadActiveSessions;
+    if (originalLoad) {
+        window.loadActiveSessions = async function() {
+            const spinner = document.getElementById('refreshSpinner');
+            if (spinner) spinner.style.display = 'inline-block';
+            await originalLoad();
+            if (spinner) spinner.style.display = 'none';
+        };
+    }
+</script>
+}

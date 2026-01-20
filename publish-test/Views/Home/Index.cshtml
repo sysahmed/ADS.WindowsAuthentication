@@ -1,0 +1,97 @@
+@{
+    ViewData["Title"] = "ADS Windows Authentication";
+}
+
+<div class="container mt-5">
+    <div class="row">
+        <div class="col-md-12 text-center">
+            <h1 class="display-4 mb-4">ADS Windows Authentication</h1>
+            <p class="lead">Система за управление на Windows машини в домейн</p>
+        </div>
+    </div>
+
+    <div class="row mt-5">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">📱 Windows Forms Клиент</h5>
+                    <p class="card-text">Изтеглете Windows Forms приложението за управление на QR код аутентикация.</p>
+                    <a href="/download/client" class="btn btn-primary">
+                        <i class="bi bi-download"></i> Изтегли клиент
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">⚙️ Автоматична инсталация</h5>
+                    <p class="card-text">PowerShell скрипт за автоматична инсталация на всички компоненти.</p>
+                    <a href="/download/installer" class="btn btn-success">
+                        <i class="bi bi-download"></i> Изтегли инсталатор
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5>📋 Инструкции за инсталация</h5>
+                </div>
+                <div class="card-body">
+                    <ol>
+                        <li>
+                            <strong>Изтеглете инсталационния скрипт:</strong>
+                            <div class="mt-2">
+                                <code class="bg-light p-2 d-block">Invoke-WebRequest -Uri "https://ads-auth.nursanbulgaria.com/download/installer" -OutFile "Install-ADS.ps1"</code>
+                            </div>
+                        </li>
+                        <li class="mt-3">
+                            <strong>Стартирайте скрипта като администратор:</strong>
+                            <div class="mt-2">
+                                <code class="bg-light p-2 d-block">.\Install-ADS.ps1</code>
+                            </div>
+                        </li>
+                        <li class="mt-3">
+                            <strong>Скриптът автоматично ще:</strong>
+                            <ul>
+                                <li>Създаде необходимите директории</li>
+                                <li>Изтегли Windows Forms клиент</li>
+                                <li>Инсталира Monitor Service</li>
+                                <li>Регистрира Credential Provider DLL (ако е наличен)</li>
+                                <li>Конфигурира настройките</li>
+                            </ul>
+                        </li>
+                        <li class="mt-3">
+                            <strong>Рестартирайте компютъра</strong> за да активирате Credential Provider
+                        </li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5>🔗 Полезни линкове</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="list-unstyled">
+                        <li class="mb-2">
+                            <a href="/swagger" class="btn btn-outline-primary btn-sm">📚 API Документация (Swagger)</a>
+                        </li>
+                        <li class="mb-2">
+                            <a href="/auth" class="btn btn-outline-info btn-sm">🔐 QR Код Аутентикация</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

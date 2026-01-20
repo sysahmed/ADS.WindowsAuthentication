@@ -1,0 +1,106 @@
+@{
+    ViewData["Title"] = "Аутентикация";
+}
+
+<div class="page-container">
+    <div class="auth-container">
+        <div class="logo">
+            <h1>🔐 ADS Auth</h1>
+            <p class="text-muted">Windows Authentication</p>
+        </div>
+
+@if (!string.IsNullOrEmpty(ViewBag.Error as string))
+{
+    <div class="alert alert-danger" role="alert">
+        @ViewBag.Error
+    </div>
+}
+
+@if (ViewBag.MachineName != null)
+{
+    <div class="machine-info">
+        <p class="mb-1"><strong>Компютър:</strong> @ViewBag.MachineName</p>
+        <p class="mb-0"><strong>Потребител:</strong> @ViewBag.Username@@@ViewBag.Domain</p>
+    </div>
+}
+else if (!string.IsNullOrEmpty(ViewBag.Token as string))
+{
+    <div class="alert alert-info" role="alert">
+        <strong>Токен намерен!</strong> Моля, въведете вашите credentials по-долу.
+    </div>
+}
+
+<!-- QR Scanner Modal -->
+<div class="modal fade" id="qrScannerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">📷 Сканиране на QR код</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <video id="qrVideo" width="100%" style="max-width: 400px; border-radius: 10px;" autoplay playsinline></video>
+                <div id="qrScannerError" class="alert alert-danger mt-3" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="closeScannerBtn">Затвори</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Manual Token Input -->
+<div class="mb-3">
+    <label class="form-label">Или въведете токен ръчно:</label>
+    <div class="input-group">
+        <input type="text" class="form-control" id="manualToken" placeholder="Въведете токен от QR кода" />
+        <button class="btn btn-outline-secondary" type="button" id="loadTokenBtn">Зареди</button>
+    </div>
+</div>
+
+<!-- QR Scanner Button -->
+<div class="mb-3 text-center">
+    <button type="button" class="btn btn-success w-100" id="scanQRBtn">
+        📷 Сканирай QR код
+    </button>
+</div>
+
+<form method="post" asp-action="AuthPost" id="authForm">
+    @Html.AntiForgeryToken()
+    <input type="hidden" name="token" id="tokenInput" value="@ViewBag.Token" />
+    
+    <div class="mb-3">
+        <label for="username" class="form-label">Потребителско име</label>
+        <input type="text" class="form-control" id="username" name="username" 
+               value="@ViewBag.Username" required autofocus />
+    </div>
+
+    <div class="mb-3">
+        <label for="domain" class="form-label">Домейн</label>
+        <input type="text" class="form-control" id="domain" name="domain" 
+               value="@ViewBag.Domain" required />
+    </div>
+
+    <div class="mb-3">
+        <label for="password" class="form-label">Парола</label>
+        <input type="password" class="form-control" id="password" name="password" required />
+    </div>
+
+    <button type="submit" class="btn btn-primary w-100">
+        🔓 Вход
+    </button>
+</form>
+
+<div class="mt-3 text-center">
+    <small class="text-muted">Сканирайте QR кода или въведете вашите домейн credentials</small>
+</div>
+
+    </div>
+</div>
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="/qr-scanner.js"></script>
+    <script src="/js/auth.js"></script>
+}
+

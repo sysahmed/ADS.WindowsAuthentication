@@ -1,0 +1,178 @@
+@{
+    ViewData["Title"] = "Логове по машина";
+    var machines = ViewBag.Machines as List<string> ?? new List<string>();
+    var machineName = ViewBag.MachineName as string;
+    var activities = ViewBag.Activities as List<ADS.WindowsAuth.Core.Models.UserActivity> ?? new List<ADS.WindowsAuth.Core.Models.UserActivity>();
+}
+
+<div class="container mt-5 mb-5">
+    <div class="row mb-4">
+        <div class="col-md-12 text-center fade-in">
+            <h1 class="display-4 mb-3" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-weight: 800;">
+                📊 Логове и Активност
+            </h1>
+            <p class="lead text-white" style="text-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+                Преглед на активността по машини
+            </p>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-4">
+            <div class="glass-card scale-in">
+                <div class="d-flex align-items-center mb-4">
+                    <div style="font-size: 2rem; margin-right: 1rem;">🖥️</div>
+                    <h5 class="mb-0">Избери машина</h5>
+                </div>
+                <form method="get" action="/logs" id="machineForm">
+                    <div class="mb-3">
+                        <label for="machineName" class="form-label">Машина:</label>
+                        <select class="form-control" id="machineName" name="machineName" onchange="this.form.submit()">
+                            <option value="">-- Избери машина --</option>
+                            @foreach (var machine in machines)
+                            {
+                                if (machine == machineName)
+                                {
+                                    <option value="@machine" selected>@machine</option>
+                                }
+                                else
+                                {
+                                    <option value="@machine">@machine</option>
+                                }
+                            }
+                        </select>
+                    </div>
+                </form>
+
+                @if (machines.Any())
+                {
+                    <div class="mt-4 p-3 rounded" style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); border-left: 4px solid var(--primary);">
+                        <small class="text-muted d-block mb-1"><strong>Общо машини:</strong></small>
+                        <h4 class="mb-0" style="color: var(--primary);">@machines.Count</h4>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="col-lg-8">
+            @if (!string.IsNullOrEmpty(machineName))
+            {
+                <div class="glass-card fade-in" style="animation-delay: 0.1s;">
+                    <div class="d-flex align-items-center justify-content-between mb-4">
+                        <div class="d-flex align-items-center">
+                            <div style="font-size: 2rem; margin-right: 1rem;">📈</div>
+                            <div>
+                                <h5 class="mb-0">Активност за</h5>
+                                <strong style="color: var(--primary); font-size: 1.1rem;">@machineName</strong>
+                            </div>
+                        </div>
+                        <span class="badge badge-info">@activities.Count записа</span>
+                    </div>
+
+                    @if (activities.Any())
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Потребител</th>
+                                        <th>Начало</th>
+                                        <th>Край</th>
+                                        <th>Screen Time</th>
+                                        <th>Приложения</th>
+                                        <th>Файлове</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var activity in activities)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <i class="bi bi-person-circle" style="font-size: 1.5rem; color: var(--primary);"></i>
+                                                    <div>
+                                                        <strong>@activity.Username</strong>
+                                                        <br><small class="text-muted">@@@activity.Domain</small>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <small>@activity.StartTime.ToString("dd.MM.yyyy")</small><br>
+                                                <strong>@activity.StartTime.ToString("HH:mm:ss")</strong>
+                                            </td>
+                                            <td>
+                                                @if (activity.EndTime.HasValue)
+                                                {
+                                                    <small>@activity.EndTime.Value.ToString("dd.MM.yyyy")</small><br>
+                                                    <strong>@activity.EndTime.Value.ToString("HH:mm:ss")</strong>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge badge-success badge-pulse">● Активна</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                <span class="badge badge-info" style="font-family: var(--font-mono); font-size: 0.9rem;">
+                                                    @TimeSpan.FromSeconds(activity.ScreenTimeSeconds).ToString(@"hh\:mm\:ss")
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <span class="badge badge-secondary">
+                                                    <i class="bi bi-app"></i> @activity.OpenedApplications.Count
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <span class="badge badge-secondary">
+                                                    <i class="bi bi-file-earmark"></i> @activity.OpenedFiles.Count
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-center py-5">
+                            <div style="font-size: 4rem; opacity: 0.3;">📭</div>
+                            <p class="text-muted mt-3">Няма намерена активност за тази машина</p>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="glass-card text-center py-5 fade-in" style="animation-delay: 0.1s;">
+                    <div style="font-size: 4rem; opacity: 0.3;">👈</div>
+                    <h5 class="mt-3 mb-2">Изберете машина</h5>
+                    <p class="text-muted">Моля, изберете машина от списъка вляво, за да видите активността</p>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <div class="glass-card fade-in" style="animation-delay: 0.2s;">
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="/" class="btn btn-outline-primary">
+                        <i class="bi bi-house"></i> Начало
+                    </a>
+                    <a href="/api/logs/machines" class="btn btn-outline-primary" target="_blank">
+                        <i class="bi bi-code-square"></i> API: Списък с машини
+                    </a>
+                    @if (!string.IsNullOrEmpty(machineName))
+                    {
+                        <a href="/api/logs/machine/@machineName" class="btn btn-outline-primary" target="_blank">
+                            <i class="bi bi-code-square"></i> API: Данни за @machineName
+                        </a>
+                        <a href="/api/logs/machine/@machineName/stats" class="btn btn-outline-primary" target="_blank">
+                            <i class="bi bi-bar-chart"></i> API: Статистика
+                        </a>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

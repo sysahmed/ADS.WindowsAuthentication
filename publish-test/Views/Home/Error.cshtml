@@ -1,0 +1,30 @@
+@{
+    ViewData["Title"] = "Грешка";
+}
+
+<div class="text-center">
+    <div class="mb-4">
+        <svg width="80" height="80" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="text-danger">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/>
+            <path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+    </div>
+    
+    <h2 class="text-danger mb-3">❌ Грешка</h2>
+    
+    @if (!string.IsNullOrEmpty(ViewBag.Error as string))
+    {
+        <div class="alert alert-danger" role="alert">
+            @ViewBag.Error
+        </div>
+    }
+    else
+    {
+        <p class="lead">Възникна грешка при обработката на заявката.</p>
+    }
+    
+    <div class="mt-4">
+        <a href="/" class="btn btn-outline-primary">Върни се назад</a>
+    </div>
+</div>
+

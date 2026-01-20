@@ -1,0 +1,194 @@
+@{
+    Layout = null;
+    ViewData["Title"] = "Настройки на Monitor Service";
+    var machines = ViewBag.Machines as List<string> ?? new List<string>();
+    var selectedMachine = ViewBag.SelectedMachine as string;
+    var configuration = ViewBag.Configuration as ADS.WindowsAuth.API.Controllers.MonitorConfigurationResponse;
+}
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - ADS Windows Authentication</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <style>
+        body {
+            background: #f5f5f5;
+            padding-top: 20px;
+        }
+        .navbar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin-bottom: 20px;
+        }
+        .navbar-brand {
+            color: white !important;
+            font-weight: 700;
+        }
+        .nav-link {
+            color: rgba(255,255,255,0.8) !important;
+        }
+        .nav-link:hover {
+            color: white !important;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">🔐 ADS Windows Auth</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="/">🏠 Начало</a>
+                <a class="nav-link" href="/policies">🔒 Политики</a>
+                <a class="nav-link active" href="/monitor-settings">⚙️ Настройки</a>
+                <a class="nav-link" href="/logs">📊 Логове</a>
+            </div>
+        </div>
+    </nav>
+
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-12">
+            <h2 class="mb-4">⚙️ Настройки на Monitor Service</h2>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Избери машина</h5>
+                </div>
+                <div class="card-body">
+                    <form method="get" action="/monitor-settings">
+                        <div class="mb-3">
+                            <label for="machineName" class="form-label">Машина:</label>
+                            <select class="form-select" id="machineName" name="machineName" onchange="this.form.submit()">
+                                <option value="">-- Избери машина --</option>
+                                @foreach (var machine in machines)
+                                {
+                                    if (machine == selectedMachine)
+                                    {
+                                        <option value="@machine" selected>@machine</option>
+                                    }
+                                    else
+                                    {
+                                        <option value="@machine">@machine</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-8">
+            @if (!string.IsNullOrEmpty(selectedMachine))
+            {
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Конфигурация за @selectedMachine</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="configForm">
+                            <input type="hidden" id="machineName" value="@selectedMachine">
+                            <div class="mb-3">
+                                <label for="serviceUrl" class="form-label">Service URL:</label>
+                                <input type="text" class="form-control" id="serviceUrl" value="@(configuration?.ServiceUrl ?? "https://ads-auth.nursanbulgaria.com")" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="apiKey" class="form-label">API Key (опционално):</label>
+                                <input type="text" class="form-control" id="apiKey" value="@(configuration?.ApiKey ?? "")">
+                            </div>
+                            <div class="mb-3 form-check">
+                                <input type="checkbox" class="form-check-input" id="requireVpn" @(configuration?.RequireVpn == true ? "checked" : "")>
+                                <label class="form-check-label" for="requireVpn">Изисква VPN</label>
+                            </div>
+                            <div class="mb-3">
+                                <label for="vpnCheckInterval" class="form-label">VPN Check Interval (секунди):</label>
+                                <input type="number" class="form-control" id="vpnCheckInterval" value="@(configuration?.VpnCheckInterval ?? 300)">
+                            </div>
+                            <div class="mb-3">
+                                <label for="vpnGateways" class="form-label">VPN Gateways (JSON array):</label>
+                                <textarea class="form-control" id="vpnGateways" rows="2">@(configuration?.VpnGateways ?? "[]")</textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label for="vpnProcessNames" class="form-label">VPN Process Names (JSON array):</label>
+                                <textarea class="form-control" id="vpnProcessNames" rows="2">@(configuration?.VpnProcessNames ?? "[\"FortiClient\",\"rasdial\"]")</textarea>
+                            </div>
+                            <div class="mb-3 form-check">
+                                <input type="checkbox" class="form-check-input" id="offlineMode" @(configuration?.OfflineMode == true ? "checked" : "")>
+                                <label class="form-check-label" for="offlineMode">Offline Mode</label>
+                            </div>
+                            <div class="mb-3">
+                                <label for="offlineDataRetention" class="form-label">Offline Data Retention (дни):</label>
+                                <input type="number" class="form-control" id="offlineDataRetention" value="@(configuration?.OfflineDataRetention ?? 7)">
+                            </div>
+                            <div class="mb-3">
+                                <label for="connectionTimeout" class="form-label">Connection Timeout (секунди):</label>
+                                <input type="number" class="form-control" id="connectionTimeout" value="@(configuration?.ConnectionTimeout ?? 30)">
+                            </div>
+                            <div class="mb-3">
+                                <label for="retryInterval" class="form-label">Retry Interval (секунди):</label>
+                                <input type="number" class="form-control" id="retryInterval" value="@(configuration?.RetryInterval ?? 60)">
+                            </div>
+                            <div class="mb-3">
+                                <label for="maxRetries" class="form-label">Max Retries:</label>
+                                <input type="number" class="form-control" id="maxRetries" value="@(configuration?.MaxRetries ?? 3)">
+                            </div>
+                            <button type="button" class="btn btn-primary" onclick="saveConfiguration()">💾 Запази конфигурация</button>
+                        </form>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-info">
+                    Моля, изберете машина за да видите и редактирате нейната конфигурация.
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<script>
+    async function saveConfiguration() {
+        const machineName = document.getElementById('machineName').value;
+        const config = {
+            MachineName: machineName,
+            ServiceUrl: document.getElementById('serviceUrl').value,
+            ApiKey: document.getElementById('apiKey').value || null,
+            RequireVpn: document.getElementById('requireVpn').checked,
+            VpnCheckInterval: parseInt(document.getElementById('vpnCheckInterval').value),
+            VpnGateways: document.getElementById('vpnGateways').value,
+            VpnProcessNames: document.getElementById('vpnProcessNames').value,
+            OfflineMode: document.getElementById('offlineMode').checked,
+            OfflineDataRetention: parseInt(document.getElementById('offlineDataRetention').value),
+            ConnectionTimeout: parseInt(document.getElementById('connectionTimeout').value),
+            RetryInterval: parseInt(document.getElementById('retryInterval').value),
+            MaxRetries: parseInt(document.getElementById('maxRetries').value)
+        };
+
+        try {
+            const response = await fetch('/api/monitor/configuration', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(config)
+            });
+
+            if (response.ok) {
+                alert('Конфигурацията е запазена успешно! Monitor Service ще я синхронизира на всеки 5 минути.');
+            } else {
+                alert('Грешка при запазване на конфигурацията');
+            }
+        } catch (error) {
+            alert('Грешка: ' + error.message);
+        }
+    }
+</script>
+</body>
+</html>
+

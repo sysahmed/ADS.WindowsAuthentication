@@ -1,0 +1,249 @@
+@{
+    ViewData["Title"] = "Remote Desktop Viewer";
+    var sessionId = ViewData["SessionId"] as string;
+    var serviceUrl = ViewData["ServiceUrl"] as string ?? "http://localhost:5140/hubs/remotedesktop";
+}
+
+<style>
+    body {
+        overflow: hidden;
+    }
+    
+    #viewerContainer {
+        position: fixed;
+        top: 60px;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: #1a1a1a;
+        display: flex;
+        flex-direction: column;
+    }
+
+    #toolbar {
+        background: #2d2d2d;
+        color: white;
+        padding: 10px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid #404040;
+    }
+
+    #screenContainer {
+        flex: 1;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        overflow: auto;
+        position: relative;
+    }
+
+    #remoteScreen {
+        max-width: 100%;
+        max-height: 100%;
+        box-shadow: 0 0 30px rgba(0,0,0,0.5);
+        cursor: crosshair;
+    }
+
+    #statusPanel {
+        background: rgba(0,0,0,0.8);
+        color: white;
+        padding: 20px;
+        border-radius: 8px;
+        text-align: center;
+    }
+
+    .status-connecting { color: #ffc107; }
+    .status-connected { color: #28a745; }
+    .status-error { color: #dc3545; }
+
+    #stats {
+        font-size: 0.85em;
+        opacity: 0.7;
+    }
+</style>
+
+<div id="viewerContainer">
+    <div id="toolbar">
+        <div>
+            <strong>Session:</strong> <code>@sessionId</code>
+            <span id="connectionStatus" class="ms-3 status-connecting">● Свързване...</span>
+        </div>
+        <div id="stats">
+            FPS: <span id="fpsCounter">0</span> | 
+            Frames: <span id="frameCounter">0</span>
+        </div>
+        <div>
+            <button class="btn btn-sm btn-warning" id="btnRequestControl" disabled>
+                <i class="bi bi-unlock"></i> Заяви Контрол
+            </button>
+            <button class="btn btn-sm btn-danger" id="btnDisconnect">
+                <i class="bi bi-x-circle"></i> Изключи
+            </button>
+        </div>
+    </div>
+
+    <div id="screenContainer">
+        <div id="statusPanel">
+            <div class="spinner-border status-connecting" role="status">
+                <span class="visually-hidden">Свързване...</span>
+            </div>
+            <p class="mt-3" id="statusMessage">Свързване към host...</p>
+        </div>
+        <img id="remoteScreen" style="display: none;" alt="Remote Screen">
+    </div>
+</div>
+
+@section Scripts {
+<script src="~/lib/microsoft/signalr/dist/browser/signalr.min.js"></script>
+<script>
+    const sessionId = '@sessionId';
+    const serviceUrl = '@serviceUrl';
+    let connection = null;
+    let controlEnabled = false;
+    let frameCount = 0;
+    let lastFpsUpdate = Date.now();
+    let fps = 0;
+
+    // SignalR connection setup
+    async function connectToRemoteDesktop() {
+        try {
+            // Използваме Service URL от конфигурацията
+            connection = new signalR.HubConnectionBuilder()
+                .withUrl(serviceUrl)
+                .withAutomaticReconnect()
+                .build();
+
+            // Event handlers
+            connection.on("ControlGranted", () => {
+                controlEnabled = true;
+                updateStatus("Контрол ОДОБРЕН", "connected");
+                document.getElementById('btnRequestControl').disabled = true;
+                document.getElementById('btnRequestControl').classList.remove('btn-warning');
+                document.getElementById('btnRequestControl').classList.add('btn-success');
+                document.getElementById('btnRequestControl').innerHTML = '<i class="bi bi-check-circle"></i> Контрол Активен';
+            });
+
+            connection.on("ControlDenied", (reason) => {
+                updateStatus(`Контрол ОТКАЗАН: ${reason}`, "error");
+            });
+
+            connection.on("ReceiveFrame", (frameData) => {
+                // Display frame
+                const img = document.getElementById('remoteScreen');
+                const blob = new Blob([new Uint8Array(frameData)], { type: 'image/jpeg' });
+                const url = URL.createObjectURL(blob);
+                
+                img.onload = () => URL.revokeObjectURL(url);
+                img.src = url;
+                img.style.display = 'block';
+                document.getElementById('statusPanel').style.display = 'none';
+
+                // Update stats
+                frameCount++;
+                updateFPS();
+            });
+
+            connection.on("SessionEnded", () => {
+                updateStatus("Сесията приключи", "error");
+                setTimeout(() => window.location.href = '/RemoteDesktop', 2000);
+            });
+
+            connection.on("HostDisconnected", () => {
+                updateStatus("Host се изключи", "error");
+            });
+
+            connection.on("Error", (message) => {
+                updateStatus(`Грешка: ${message}`, "error");
+            });
+
+            // Connect
+            await connection.start();
+            updateStatus("Свързан! Заявяване на достъп...", "connecting");
+
+            // Request control
+            await connection.invoke("RequestControl", sessionId, "web-viewer");
+            document.getElementById('btnRequestControl').disabled = false;
+
+        } catch (error) {
+            console.error('Connection error:', error);
+            updateStatus(`Грешка при свързване: ${error.message}`, "error");
+        }
+    }
+
+    // Mouse/Keyboard input handlers
+    document.getElementById('remoteScreen').addEventListener('mousemove', async (e) => {
+        if (!controlEnabled) return;
+
+        const rect = e.target.getBoundingClientRect();
+        const scaleX = e.target.naturalWidth / rect.width;
+        const scaleY = e.target.naturalHeight / rect.height;
+        
+        const x = Math.floor((e.clientX - rect.left) * scaleX);
+        const y = Math.floor((e.clientY - rect.top) * scaleY);
+
+        await connection.invoke("SendMouseMove", sessionId, x, y);
+    });
+
+    document.getElementById('remoteScreen').addEventListener('click', async (e) => {
+        if (!controlEnabled) return;
+        e.preventDefault();
+        await connection.invoke("SendMouseClick", sessionId, "left");
+    });
+
+    document.getElementById('remoteScreen').addEventListener('contextmenu', async (e) => {
+        if (!controlEnabled) return;
+        e.preventDefault();
+        await connection.invoke("SendMouseClick", sessionId, "right");
+    });
+
+    document.addEventListener('keydown', async (e) => {
+        if (!controlEnabled) return;
+        await connection.invoke("SendKeyPress", sessionId, e.key);
+    });
+
+    // UI helpers
+    function updateStatus(message, type) {
+        const statusEl = document.getElementById('connectionStatus');
+        const messageEl = document.getElementById('statusMessage');
+        
+        statusEl.className = `ms-3 status-${type}`;
+        statusEl.textContent = `● ${message}`;
+        
+        if (messageEl) {
+            messageEl.textContent = message;
+        }
+    }
+
+    function updateFPS() {
+        const now = Date.now();
+        if (now - lastFpsUpdate >= 1000) {
+            fps = frameCount;
+            frameCount = 0;
+            lastFpsUpdate = now;
+            
+            document.getElementById('fpsCounter').textContent = fps;
+        }
+        document.getElementById('frameCounter').textContent = frameCount;
+    }
+
+    // Button actions
+    document.getElementById('btnRequestControl').addEventListener('click', async () => {
+        if (connection) {
+            await connection.invoke("RequestControl", sessionId, "web-viewer");
+            updateStatus("Изчакване одобрение от host...", "connecting");
+        }
+    });
+
+    document.getElementById('btnDisconnect').addEventListener('click', async () => {
+        if (connection) {
+            await connection.invoke("DisconnectSession", sessionId);
+            window.location.href = '/RemoteDesktop';
+        }
+    });
+
+    // Start connection
+    connectToRemoteDesktop();
+</script>
+}

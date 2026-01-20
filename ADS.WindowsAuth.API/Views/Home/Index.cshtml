@@ -1,0 +1,158 @@
+@{
+    ViewData["Title"] = "ADS Windows Authentication";
+}
+
+<div class="container mt-5">
+    <div class="row">
+        <div class="col-md-12 text-center mb-5 fade-in">
+            <h1 class="display-3 mb-4" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-weight: 800;">
+                🔐 ADS Windows Authentication
+            </h1>
+            <p class="lead text-white" style="font-size: 1.25rem; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+                Система за управление на Windows машини в домейн
+            </p>
+        </div>
+    </div>
+
+    <div class="row mt-4 g-4">
+        <div class="col-md-6">
+            <div class="glass-card scale-in">
+                <div style="font-size: 3rem; text-align: center; margin-bottom: 1rem;">📱</div>
+                <h5 class="card-title text-center mb-3">Windows Forms Клиент</h5>
+                <p class="card-text text-center mb-4">
+                    Изтеглете Windows Forms приложението за управление на QR код аутентикация.
+                </p>
+                <div class="text-center">
+                    <a href="/download/client" class="btn btn-primary btn-lg">
+                        <i class="bi bi-download"></i> Изтегли клиент
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="glass-card scale-in" style="animation-delay: 0.1s;">
+                <div style="font-size: 3rem; text-align: center; margin-bottom: 1rem;">⚙️</div>
+                <h5 class="card-title text-center mb-3">Автоматична инсталация</h5>
+                <p class="card-text text-center mb-4">
+                    PowerShell скрипт за автоматична инсталация на всички компоненти.
+                </p>
+                <div class="text-center">
+                    <a href="/download/installer" class="btn btn-success btn-lg">
+                        <i class="bi bi-download"></i> Изтегли инсталатор
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <div class="glass-card fade-in" style="animation-delay: 0.2s;">
+                <div class="d-flex align-items-center mb-4">
+                    <div style="font-size: 2rem; margin-right: 1rem;">📋</div>
+                    <h5 class="mb-0">Инструкции за инсталация</h5>
+                </div>
+                <ol class="installation-steps">
+                    <li class="mb-4">
+                        <strong>Изтеглете инсталационния скрипт:</strong>
+                        <div class="mt-2 position-relative">
+                            <code class="d-block p-3 bg-light rounded" style="border-left: 4px solid var(--primary);">
+                                Invoke-WebRequest -Uri "https://ads-auth.nursanbulgaria.com/download/installer" -OutFile "Install-ADS.ps1"
+                            </code>
+                        </div>
+                    </li>
+                    <li class="mb-4">
+                        <strong>Стартирайте скрипта като администратор:</strong>
+                        <div class="mt-2">
+                            <code class="d-block p-3 bg-light rounded" style="border-left: 4px solid var(--success);">
+                                .\Install-ADS.ps1
+                            </code>
+                        </div>
+                    </li>
+                    <li class="mb-4">
+                        <strong>Скриптът автоматично ще:</strong>
+                        <ul class="mt-2">
+                            <li>Създаде необходимите директории</li>
+                            <li>Изтегли Windows Forms клиент</li>
+                            <li>Инсталира Monitor Service</li>
+                            <li>Регистрира Credential Provider DLL (ако е наличен)</li>
+                            <li>Конфигурира настройките</li>
+                        </ul>
+                    </li>
+                    <li>
+                        <strong>Рестартирайте компютъра</strong> за да активирате Credential Provider
+                    </li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4 mb-5">
+        <div class="col-md-12">
+            <div class="glass-card fade-in" style="animation-delay: 0.3s;">
+                <div class="d-flex align-items-center mb-4">
+                    <div style="font-size: 2rem; margin-right: 1rem;">🔗</div>
+                    <h5 class="mb-0">Полезни линкове</h5>
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <a href="/swagger" class="btn btn-outline-primary w-100 d-flex align-items-center justify-content-center gap-2">
+                            <i class="bi bi-book"></i> API Документация (Swagger)
+                        </a>
+                    </div>
+                    <div class="col-md-6">
+                        <a href="/auth" class="btn btn-outline-primary w-100 d-flex align-items-center justify-content-center gap-2">
+                            <i class="bi bi-qr-code"></i> QR Код Аутентикация
+                        </a>
+                    </div>
+                    <div class="col-md-6">
+                        <a href="/logs" class="btn btn-outline-primary w-100 d-flex align-items-center justify-content-center gap-2">
+                            <i class="bi bi-file-text"></i> Логове по машина
+                        </a>
+                    </div>
+                    <div class="col-md-6">
+                        <a href="/RemoteDesktop" class="btn btn-outline-primary w-100 d-flex align-items-center justify-content-center gap-2">
+                            <i class="bi bi-display"></i> Remote Desktop
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.installation-steps {
+    counter-reset: step-counter;
+    list-style: none;
+    padding-left: 0;
+}
+
+.installation-steps > li {
+    counter-increment: step-counter;
+    position: relative;
+    padding-left: 3rem;
+}
+
+.installation-steps > li::before {
+    content: counter(step-counter);
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 2rem;
+    height: 2rem;
+    background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 1.1rem;
+}
+
+.installation-steps ul {
+    margin-top: 0.5rem;
+}
+</style>

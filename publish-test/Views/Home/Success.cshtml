@@ -1,0 +1,28 @@
+@{
+    ViewData["Title"] = "Успешна аутентикация";
+}
+
+<div class="text-center">
+    <div class="mb-4">
+        <svg width="80" height="80" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="text-success">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/>
+            <path d="M8 12l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+    </div>
+    
+    <h2 class="text-success mb-3">✅ Аутентикацията е успешна!</h2>
+    
+    @if (ViewBag.MachineName != null)
+    {
+        <div class="machine-info mb-4">
+            <p class="mb-0"><strong>Компютър:</strong> @ViewBag.MachineName</p>
+        </div>
+    }
+    
+    <p class="lead">Можете да се върнете на компютъра и да влезете в системата.</p>
+    
+    <div class="mt-4">
+        <p class="text-muted small">Сесията е одобрена и компютърът ще ви позволи достъп.</p>
+    </div>
+</div>
+

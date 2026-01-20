@@ -1,0 +1,217 @@
+@{
+    ViewData["Title"] = "Аутентикация";
+}
+
+@if (!string.IsNullOrEmpty(ViewBag.Error as string))
+{
+    <div class="alert alert-danger" role="alert">
+        @ViewBag.Error
+    </div>
+}
+
+@if (ViewBag.MachineName != null)
+{
+    <div class="machine-info">
+        <p class="mb-1"><strong>Компютър:</strong> @ViewBag.MachineName</p>
+        <p class="mb-0"><strong>Потребител:</strong> @ViewBag.Username@@@ViewBag.Domain</p>
+    </div>
+}
+else if (!string.IsNullOrEmpty(ViewBag.Token as string))
+{
+    <div class="alert alert-info" role="alert">
+        <strong>Токен намерен!</strong> Моля, въведете вашите credentials по-долу.
+    </div>
+}
+
+<!-- QR Scanner Modal -->
+<div class="modal fade" id="qrScannerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">📷 Сканиране на QR код</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <video id="qrVideo" width="100%" style="max-width: 400px; border-radius: 10px;" autoplay playsinline></video>
+                <div id="qrScannerError" class="alert alert-danger mt-3" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="closeScannerBtn">Затвори</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Manual Token Input -->
+<div class="mb-3">
+    <label class="form-label">Или въведете токен ръчно:</label>
+    <div class="input-group">
+        <input type="text" class="form-control" id="manualToken" placeholder="Въведете токен от QR кода" />
+        <button class="btn btn-outline-secondary" type="button" id="loadTokenBtn">Зареди</button>
+    </div>
+</div>
+
+<!-- QR Scanner Button -->
+<div class="mb-3 text-center">
+    <button type="button" class="btn btn-success w-100" id="scanQRBtn">
+        📷 Сканирай QR код
+    </button>
+</div>
+
+<form method="post" asp-action="AuthPost" id="authForm">
+    @Html.AntiForgeryToken()
+    <input type="hidden" name="token" id="tokenInput" value="@ViewBag.Token" />
+    
+    <div class="mb-3">
+        <label for="username" class="form-label">Потребителско име</label>
+        <input type="text" class="form-control" id="username" name="username" 
+               value="@ViewBag.Username" required autofocus />
+    </div>
+
+    <div class="mb-3">
+        <label for="domain" class="form-label">Домейн</label>
+        <input type="text" class="form-control" id="domain" name="domain" 
+               value="@ViewBag.Domain" required />
+    </div>
+
+    <div class="mb-3">
+        <label for="password" class="form-label">Парола</label>
+        <input type="password" class="form-control" id="password" name="password" required />
+    </div>
+
+    <button type="submit" class="btn btn-primary w-100">
+        🔓 Вход
+    </button>
+</form>
+
+<div class="mt-3 text-center">
+    <small class="text-muted">Сканирайте QR кода или въведете вашите домейн credentials</small>
+</div>
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="/qr-scanner.js"></script>
+    <script>
+        let qrScanner = null;
+
+        // Бутон за сканиране на QR код
+        document.getElementById('scanQRBtn').addEventListener('click', function() {
+            const modal = new bootstrap.Modal(document.getElementById('qrScannerModal'));
+            modal.show();
+
+            // Стартиране на скенера след показване на модала
+            setTimeout(() => {
+                try {
+                    qrScanner = window.startQRScanner('qrVideo', function(qrData) {
+                        console.log('QR код сканиран:', qrData);
+                        
+                        let token = null;
+                        
+                        // Опит 1: Проверка дали е пълен URL
+                        try {
+                            const url = new URL(qrData);
+                            token = url.searchParams.get('token');
+                            
+                            // Ако няма token в query string, опитваме се да го извлечем от пътя
+                            if (!token && url.pathname.includes('/auth')) {
+                                const pathParts = url.pathname.split('/');
+                                const authIndex = pathParts.indexOf('auth');
+                                if (authIndex >= 0 && pathParts.length > authIndex + 1) {
+                                    token = pathParts[authIndex + 1];
+                                }
+                            }
+                        } catch (e) {
+                            // Не е валиден URL, опитваме се като директно токен
+                            console.log('Не е URL, опитваме като директно токен');
+                        }
+                        
+                        // Опит 2: Проверка дали данните са директно токен
+                        if (!token) {
+                            // Проверка дали съдържа "token="
+                            const tokenMatch = qrData.match(/token[=:]([a-zA-Z0-9\-_]+)/i);
+                            if (tokenMatch) {
+                                token = tokenMatch[1];
+                            } else {
+                                // Ако не, приемаме цялата стойност като токен (ако е достатъчно дълга)
+                                if (qrData.length > 10 && qrData.length < 200) {
+                                    token = qrData.trim();
+                                }
+                            }
+                        }
+                        
+                        if (token) {
+                            document.getElementById('tokenInput').value = token;
+                            document.getElementById('manualToken').value = token;
+                            
+                            // Зареждане на информацията за сесията
+                            loadSessionInfo(token);
+                            
+                            // Затваряне на модала
+                            bootstrap.Modal.getInstance(document.getElementById('qrScannerModal')).hide();
+                            
+                            alert('QR кодът е сканиран успешно!');
+                        } else {
+                            alert('Невалиден QR код. Моля, опитайте отново.\nСканирани данни: ' + qrData.substring(0, 50));
+                        }
+                    });
+                } catch (error) {
+                    console.error('Грешка при стартиране на скенера:', error);
+                    document.getElementById('qrScannerError').textContent = error.message;
+                    document.getElementById('qrScannerError').style.display = 'block';
+                }
+            }, 300);
+        });
+
+        // Затваряне на скенера при затваряне на модала
+        document.getElementById('qrScannerModal').addEventListener('hidden.bs.modal', function() {
+            if (qrScanner) {
+                qrScanner.stop();
+                qrScanner = null;
+            }
+        });
+
+        // Зареждане на токен ръчно
+        document.getElementById('loadTokenBtn').addEventListener('click', function() {
+            const token = document.getElementById('manualToken').value.trim();
+            if (token) {
+                document.getElementById('tokenInput').value = token;
+                loadSessionInfo(token);
+            } else {
+                alert('Моля, въведете токен');
+            }
+        });
+
+        // Зареждане на информация за сесията
+        async function loadSessionInfo(token) {
+            try {
+                const response = await fetch(`/api/auth/session/token/${token}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('username').value = data.username || '';
+                    document.getElementById('domain').value = data.domain || '';
+                    
+                    // Показване на информация за машината
+                    const machineInfo = document.querySelector('.machine-info');
+                    if (machineInfo) {
+                        machineInfo.innerHTML = `
+                            <p class="mb-1"><strong>Компютър:</strong> ${data.machineName || 'N/A'}</p>
+                            <p class="mb-0"><strong>Потребител:</strong> ${data.username || ''}@@${data.domain || ''}</p>
+                        `;
+                    }
+                } else {
+                    alert('Сесията не е намерена или е изтекла');
+                }
+            } catch (error) {
+                console.error('Грешка при зареждане на информация:', error);
+            }
+        }
+
+        // Автоматично фокусиране на паролата след въвеждане на потребителско име
+        document.getElementById('username').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                document.getElementById('password').focus();
+            }
+        });
+    </script>
+}
+
