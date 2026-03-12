@@ -160,7 +160,14 @@ async function loadSessionInfo(token) {
             const domainInput = document.getElementById('domain');
 
             if (usernameInput) usernameInput.value = data.username || '';
-            if (domainInput) domainInput.value = data.domain || '';
+
+            // Домейнът идва от appsettings (defaultDomain hidden field), НЕ от session.domain
+            // session.domain може да е machine name ("AHMEDITDESK") ако е създадена от Credential Provider
+            const defaultDomain = document.getElementById('defaultDomain')?.value || '';
+            if (domainInput) {
+                // Приоритет: 1) appsettings домейн, 2) текущата стойност, 3) session домейн
+                domainInput.value = defaultDomain || domainInput.value || data.domain || '';
+            }
 
             // Update machine info display
             updateMachineInfo(data);
@@ -208,9 +215,11 @@ function updateMachineInfo(data) {
     }
 
     if (machineInfo) {
+        // Показваме домейна от appsettings, не machine name от сесията
+        const defaultDomain = document.getElementById('defaultDomain')?.value || data.domain || '';
         machineInfo.innerHTML = `
             <p class="mb-1"><strong>Компютър:</strong> ${data.machineName || 'N/A'}</p>
-            <p class="mb-0"><strong>Потребител:</strong> ${data.username || ''}@${data.domain || ''}</p>
+            <p class="mb-0"><strong>Потребител:</strong> ${data.username || ''}@${defaultDomain}</p>
         `;
         machineInfo.style.display = 'block';
     }

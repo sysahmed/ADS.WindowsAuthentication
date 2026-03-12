@@ -58,6 +58,9 @@ public:
 
     // Публичен метод за проверка дали сесията е одобрена (използва се от CredentialProvider)
     bool IsSessionApproved() const;
+    
+    // Публичен метод за спиране на polling (използва се при изтриване на Credential)
+    void StopPolling();
 
 private:
     LONG _cRef;
@@ -74,10 +77,10 @@ private:
     std::thread _pollingThread;
     std::thread _retryThread;
     std::atomic<bool> _stopPolling;
+    std::atomic<int> _cachedSessionStatus; // Кеширан статус на сесията (-1=Unknown, 0=Pending, 1=Approved, 2=Rejected, 3=Expired)
     std::mutex _mutex;
     
     void StartPolling();
-    void StopPolling();
     void PollingThreadProc();
     void UpdateQrCode();
 };

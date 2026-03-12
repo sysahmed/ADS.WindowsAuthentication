@@ -158,6 +158,22 @@ public class ActivityMonitorService : IActivityMonitorService
         return activities;
     }
 
+    public bool RemoveMachine(string machineName)
+    {
+        var keysToRemove = _activities.Keys
+            .Where(k => k.EndsWith($"@{machineName}", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (keysToRemove.Count == 0)
+            return false;
+
+        foreach (var key in keysToRemove)
+            _activities.TryRemove(key, out _);
+
+        _logger.LogInfo($"Премахнати {keysToRemove.Count} запис(а) за машина {machineName}");
+        return true;
+    }
+
     private string GetKey(string username, string machineName)
     {
         return $"{username}@{machineName}";

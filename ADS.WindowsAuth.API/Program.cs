@@ -3,6 +3,7 @@ using ADS.WindowsAuth.Core.Data;
 using ADS.WindowsAuth.Core.Models;
 using ADS.WindowsAuth.Core.Configuration;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Serilog;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -30,6 +31,9 @@ ConfigureMiddleware(app);
 // Configure endpoints
 ConfigureEndpoints(app);
 
+// Инициализиране на базата данни (създаване на таблици ако не съществуват)
+await InitializeDatabaseAsync(app);
+
 // Зареждане на активни сесии от базата данни при стартиране
 await LoadSessionsOnStartup(app);
 
@@ -37,6 +41,132 @@ await LoadSessionsOnStartup(app);
 app.Run();
 
 // Метод за зареждане на сесии при стартиране
+static async Task InitializeDatabaseAsync(WebApplication app)
+{
+    try
+    {
+        using (var scope = app.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetService<ApplicationDbContext>();
+            var logger = scope.ServiceProvider.GetService<ILoggerService>();
+            
+            if (dbContext != null)
+            {
+                logger?.LogInfo("Инициализиране на базата данни...");
+                
+                try
+                {
+                    // Ако е SQL Server, прилагаме миграции
+                    await dbContext.Database.MigrateAsync();
+                    logger?.LogInfo("Миграции приложени успешно");
+                }
+                catch (Exception migrateEx)
+                {
+                    var msg = migrateEx.Message ?? "";
+                    // Таблиците вече съществуват (напр. от предишен EnsureCreated) – синхронизираме историята на миграциите
+                    if (msg.Contains("already an object named", StringComparison.OrdinalIgnoreCase) ||
+                        msg.Contains("There is already an object", StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            await EnsureMigrationHistorySyncedAsync(dbContext, logger);
+                            logger?.LogInfo("Историята на миграциите е синхронизирана с съществуващата база.");
+                        }
+                        catch (Exception syncEx)
+                        {
+                            logger?.LogWarning($"Синхронизация на миграционна история: {syncEx.Message}. Опитвам EnsureCreated...");
+                            await TryEnsureCreatedFallbackAsync(dbContext, logger);
+                        }
+                    }
+                    else
+                    {
+                        logger?.LogWarning($"Не можах да приложа миграции: {msg}. Опитвам EnsureCreated...");
+                        await TryEnsureCreatedFallbackAsync(dbContext, logger);
+                    }
+                }
+            }
+            else
+            {
+                logger?.LogWarning("ApplicationDbContext не е наличен - пропускаме инициализация на базата данни");
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        try
+        {
+            var logger = app.Services.GetService<ILoggerService>();
+            logger?.LogError($"Грешка при инициализация на базата данни: {ex.Message}", ex);
+        }
+        catch
+        {
+            // Ако не можем да логнем, игнорираме
+        }
+    }
+}
+
+// Записва приложените миграции в __EFMigrationsHistory, когато таблиците вече съществуват
+static async Task EnsureMigrationHistorySyncedAsync(ApplicationDbContext dbContext, ILoggerService? logger)
+{
+    const string migrationId = "20260212103653_InitialCreate";
+    const string productVersion = "8.0.22";
+
+    // Създаваме таблицата за история ако липсва (SQL Server)
+    await dbContext.Database.ExecuteSqlRawAsync(@"
+        IF OBJECT_ID(N'dbo.__EFMigrationsHistory', N'U') IS NULL
+        CREATE TABLE [dbo].[__EFMigrationsHistory] (
+            [MigrationId] nvarchar(150) NOT NULL,
+            [ProductVersion] nvarchar(32) NOT NULL,
+            CONSTRAINT [PK___EFMigrationsHistory] PRIMARY KEY ([MigrationId])
+        );");
+
+    // Добавяме запис за InitialCreate, ако още го няма (алиас Value за SqlQueryRaw<int>)
+    var paramId = new SqlParameter("@mid", migrationId);
+    var alreadyApplied = await dbContext.Database
+        .SqlQueryRaw<int>("SELECT COUNT(1) AS [Value] FROM [dbo].[__EFMigrationsHistory] WHERE [MigrationId] = @mid", paramId)
+        .FirstOrDefaultAsync();
+    if (alreadyApplied == 0)
+    {
+        var paramMidInsert = new SqlParameter("@mid", migrationId);
+        var paramVer = new SqlParameter("@ver", productVersion);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            "INSERT INTO [dbo].[__EFMigrationsHistory] ([MigrationId], [ProductVersion]) VALUES (@mid, @ver)",
+            paramMidInsert,
+            paramVer);
+        logger?.LogInfo($"Записан в историята на миграциите: {migrationId}");
+    }
+
+    // Таблицата LogEntries може да липсва ако базата е създадена преди да е добавена – създаваме я ако няма
+    await dbContext.Database.ExecuteSqlRawAsync(@"
+        IF OBJECT_ID(N'dbo.LogEntries', N'U') IS NULL
+        CREATE TABLE [dbo].[LogEntries] (
+            [Id] int NOT NULL IDENTITY,
+            [MachineName] nvarchar(255) NOT NULL,
+            [Username] nvarchar(255) NOT NULL,
+            [Domain] nvarchar(255) NOT NULL,
+            [Level] nvarchar(50) NOT NULL,
+            [Message] nvarchar(4000) NOT NULL,
+            [Timestamp] datetime2 NOT NULL,
+            [Source] nvarchar(100) NULL,
+            [ExceptionType] nvarchar(255) NULL,
+            [StackTrace] nvarchar(max) NULL,
+            CONSTRAINT [PK_LogEntries] PRIMARY KEY ([Id])
+        );");
+}
+
+static async Task TryEnsureCreatedFallbackAsync(ApplicationDbContext dbContext, ILoggerService? logger)
+{
+    try
+    {
+        await dbContext.Database.EnsureCreatedAsync();
+        logger?.LogInfo("Таблиците са създадени успешно");
+    }
+    catch (Exception ensureEx)
+    {
+        logger?.LogError($"Грешка при създаване на таблиците: {ensureEx.Message}", ensureEx);
+    }
+}
+
 static async Task LoadSessionsOnStartup(WebApplication app)
 {
     try
@@ -345,10 +475,35 @@ void ConfigureMiddleware(WebApplication app)
     }
     else
     {
-        app.UseExceptionHandler("/Home/Error");
+        // Production: обработка на грешки без да използваме Error view/controller (избягваме втори exception)
+        app.UseExceptionHandler(errorApp =>
+        {
+            errorApp.Run(async context =>
+            {
+                var feature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerPathFeature>();
+                var ex = feature?.Error;
+                var logger = context.RequestServices.GetService<ILoggerService>();
+                if (logger != null && ex != null)
+                {
+                    var fullMessage = ex.Message + (ex.StackTrace != null ? "\n" + ex.StackTrace : "");
+                    if (ex.InnerException != null)
+                        fullMessage += "\nInner: " + ex.InnerException.Message + (ex.InnerException.StackTrace ?? "");
+                    logger.LogError($"Production unhandled: {context.Request.Method} {context.Request.Path} - {ex.Message}", ex);
+                }
+
+                if (context.Response.HasStarted) return;
+                context.Response.StatusCode = 500;
+                context.Response.ContentType = "text/html; charset=utf-8";
+                await context.Response.WriteAsync(
+                    @"<!DOCTYPE html><html><head><meta charset='utf-8'/><title>Грешка</title></head><body>" +
+                    @"<h1>Грешка</h1><p>Възникна грешка при обработката на заявката.</p>" +
+                    @"<p>Проверете логовете в папка <code>logs</code> или stdout логовете на сървъра.</p>" +
+                    @"<p><a href='/'>Начало</a></p></body></html>");
+            });
+        });
     }
 
-    // Global exception handling middleware - преди UseRouting
+    // Global exception handling middleware - хваща изключения извън ExceptionHandler
     app.Use(async (context, next) =>
     {
         try
@@ -359,11 +514,14 @@ void ConfigureMiddleware(WebApplication app)
         {
             var logger = context.RequestServices.GetService<ILoggerService>();
             logger?.LogError($"Грешка: {context.Request.Method} {context.Request.Path} - {ex.Message}", ex);
-            
+
             if (!context.Response.HasStarted)
             {
                 context.Response.StatusCode = 500;
-                await context.Response.WriteAsJsonAsync(new { error = "Internal server error" });
+                context.Response.ContentType = "text/html; charset=utf-8";
+                await context.Response.WriteAsync(
+                    @"<!DOCTYPE html><html><head><meta charset='utf-8'/><title>Грешка</title></head><body>" +
+                    @"<h1>Грешка</h1><p>Възникна грешка. Проверете логовете.</p><a href='/'>Начало</a></body></html>");
             }
         }
     });

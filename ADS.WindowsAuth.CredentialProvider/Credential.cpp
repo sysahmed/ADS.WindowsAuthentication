@@ -42,6 +42,14 @@ void LogCredentialDebug(const std::wstring& msg)
         << L"] " << msg << std::endl;
 }
 
+// Helper за форматиране на HRESULT/NTSTATUS стойности като hex (за диагностика)
+static std::wstring FormatHex(DWORD value)
+{
+    wchar_t buf[12];
+    swprintf_s(buf, 12, L"%08X", value);
+    return std::wstring(buf);
+}
+
 Credential::Credential() :
     _cRef(1),
     _cpus(CPUS_INVALID),
@@ -49,7 +57,8 @@ Credential::Credential() :
     _pcpce(NULL),
     _upAdviseContext(0),
     _hQrBitmap(NULL),
-    _stopPolling(false)
+    _stopPolling(false),
+    _cachedSessionStatus(-1) // Unknown статус по подразбиране
 {
     _apiClient = std::make_unique<ApiClient>();
 }
@@ -445,9 +454,9 @@ IFACEMETHODIMP Credential::GetSerialization(
         std::wstring approvedUsername, approvedDomain, approvedPassword;
         if (_apiClient->GetApprovedSessionInfo(_sessionId, approvedUsername, approvedDomain, approvedPassword))
         {
-            // ВАЖНО: Винаги използваме домейн "nursan", независимо какво се връща от API-то
-            approvedDomain = L"nursan";
-            
+            // Използваме домейна от API-то (каквото е въведено в уеб формата)
+            // НЕ презаписваме approvedDomain - може да е "nursan" (domain акаунт) или machine name (локален акаунт)
+
             LogCredentialDebug(L"Session approved for: " + approvedUsername + L"@" + approvedDomain + L" with password (length: " + std::to_wstring(approvedPassword.length()) + L")");
             
             // Проверка за празни стойности
@@ -463,6 +472,8 @@ IFACEMETHODIMP Credential::GetSerialization(
             // с username и password за автоматичен login
             ULONG authBufferSize = 0;
             BYTE* authBuffer = NULL;
+            BOOL result = FALSE;
+            DWORD lastError = 0;
             
             // За домейн логин форматираме username като "domain\username"
             std::wstring domainUsername = approvedDomain + L"\\" + approvedUsername;
@@ -475,18 +486,20 @@ IFACEMETHODIMP Credential::GetSerialization(
             std::vector<WCHAR> passwordBuffer(approvedPassword.begin(), approvedPassword.end());
             passwordBuffer.push_back(L'\0');
             
-            LogCredentialDebug(L"Calling CredPackAuthenticationBufferW with CRED_PACK_GENERIC_CREDENTIALS to get buffer size...");
-            
+            LogCredentialDebug(L"Calling CredPackAuthenticationBufferW with CRED_PACK_PROTECTED_CREDENTIALS to get buffer size...");
+
             // Първо получаваме размера на буфера
-            // ВАЖНО: За домейн логин използваме CRED_PACK_GENERIC_CREDENTIALS
-            // Функцията приема: dwFlags, pszUserName (domain\username), pszPassword, pPackedCredentials (NULL за първо извикване), pcbPackedCredentials
-            BOOL result = CredPackAuthenticationBufferW(CRED_PACK_GENERIC_CREDENTIALS, 
+            // ВАЖНО: За домейн логин използваме CRED_PACK_PROTECTED_CREDENTIALS (Kerberos/NTLM формат)
+            // CRED_PACK_GENERIC_CREDENTIALS дава "The parameter is incorrect" при Windows domain logon
+            result = CredPackAuthenticationBufferW(CRED_PACK_PROTECTED_CREDENTIALS,
                 usernameBuffer.data(), passwordBuffer.data(), NULL, &authBufferSize);
             
-            DWORD lastError = GetLastError();
+            lastError = GetLastError();
             LogCredentialDebug(L"CredPackAuthenticationBufferW (get size) returned: " + std::to_wstring(result) + L", buffer size: " + std::to_wstring(authBufferSize) + L", last error: " + std::to_wstring(lastError));
             
-            if (result || (lastError == ERROR_INSUFFICIENT_BUFFER && authBufferSize > 0))
+            // ПРОБЛЕМ: ERROR_INSUFFICIENT_BUFFER (122) е нормално поведение при първото извикване
+            // но кодът не прави правилна проверка
+            if (lastError == ERROR_INSUFFICIENT_BUFFER && authBufferSize > 0)
             {
                 // Запазваме оригиналния размер преди второто извикване
                 ULONG originalBufferSize = authBufferSize;
@@ -501,23 +514,72 @@ IFACEMETHODIMP Credential::GetSerialization(
                     authBufferSize = originalBufferSize;
                     
                     // Създаваме authentication buffer
-                    // ВАЖНО: За домейн логин използваме CRED_PACK_GENERIC_CREDENTIALS
+                    // ВАЖНО: За домейн логин използваме CRED_PACK_PROTECTED_CREDENTIALS
                     ULONG actualBufferSize = authBufferSize; // Запазваме размера преди извикването
-                    if (CredPackAuthenticationBufferW(CRED_PACK_GENERIC_CREDENTIALS,
+                    if (CredPackAuthenticationBufferW(CRED_PACK_PROTECTED_CREDENTIALS,
                         usernameBuffer.data(), passwordBuffer.data(), authBuffer, &actualBufferSize))
                     {
                         // Успешно създаден authentication buffer
-                        // Използваме стандартния Windows Credential Provider CLSID за автоматичен login
-                        // {60b78e88-ead8-445c-9cfd-0b87f74ea6cd} е CLSID на стандартния Windows Credential Provider
-                        
+                        // КРИТИЧНО: Трябва да вземем правилния LSA authentication package ID!
+                        // Ако ulAuthenticationPackage е 0 (по подразбиране от ZeroMemory),
+                        // Windows ВИНАГИ дава "потребителят не е намерен" / STATUS_NO_SUCH_USER!
+                        ULONG ulAuthPackage = 0;
+                        {
+                            HANDLE hLsa = NULL;
+                            // LsaConnectUntrusted работи без специални привилегии - подходящо за Credential Providers
+                            NTSTATUS lsaStatus = LsaConnectUntrusted(&hLsa);
+                            LogCredentialDebug(L"LsaConnectUntrusted status: 0x" + FormatHex((DWORD)lsaStatus));
+
+                            if (lsaStatus == 0 && hLsa != NULL) // STATUS_SUCCESS = 0
+                            {
+                                // ВАЖНО: CRED_PACK_PROTECTED_CREDENTIALS е проектиран за Negotiate (SPNEGO), НЕ за директен Kerberos!
+                                // Kerberos пакет НЕ разбира CredPack формата → STATUS_INTERNAL_ERROR (0xC00000E5)!
+                                // Negotiate автоматично избира между Kerberos (domain акаунти) и NTLM (локални акаунти).
+                                CHAR szNegotiate[] = "Negotiate";
+                                LSA_STRING lsaPkg;
+                                lsaPkg.Buffer = szNegotiate;
+                                lsaPkg.Length = (USHORT)strlen(szNegotiate);
+                                lsaPkg.MaximumLength = lsaPkg.Length + 1;
+
+                                NTSTATUS pkgStatus = LsaLookupAuthenticationPackage(hLsa, &lsaPkg, &ulAuthPackage);
+                                LogCredentialDebug(L"LsaLookupAuthenticationPackage (Negotiate) status: 0x" + FormatHex((DWORD)pkgStatus) + L", packageId: " + std::to_wstring(ulAuthPackage));
+
+                                if (pkgStatus != 0) // Fallback към MSV1_0 (ако Negotiate не е наличен)
+                                {
+                                    CHAR szMsv[] = "MSV1_0";
+                                    lsaPkg.Buffer = szMsv;
+                                    lsaPkg.Length = (USHORT)strlen(szMsv);
+                                    lsaPkg.MaximumLength = lsaPkg.Length + 1;
+
+                                    pkgStatus = LsaLookupAuthenticationPackage(hLsa, &lsaPkg, &ulAuthPackage);
+                                    LogCredentialDebug(L"LsaLookupAuthenticationPackage (MSV1_0) status: 0x" + FormatHex((DWORD)pkgStatus) + L", packageId: " + std::to_wstring(ulAuthPackage));
+                                }
+
+                                // Ако packageId все още е 0 след всички опити, логваме предупреждение
+                                if (ulAuthPackage == 0)
+                                {
+                                    LogCredentialDebug(L"WARNING: All packages returned packageId=0! Authentication may fail.");
+                                }
+
+                                LsaDeregisterLogonProcess(hLsa);
+                            }
+                            else
+                            {
+                                LogCredentialDebug(L"LsaConnectUntrusted FAILED - ulAuthPackage ще е 0! Логинът вероятно ще се провали.");
+                            }
+                        }
+                        LogCredentialDebug(L"Finalized ulAuthenticationPackage: " + std::to_wstring(ulAuthPackage));
+
                         // Инициализираме структурата правилно
                         ZeroMemory(pcpcs, sizeof(CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION));
-                        
-                        CLSID clsidWindowsCredProvider = { 0x60b78e88, 0xead8, 0x445c, { 0x9c, 0xfd, 0x0b, 0x87, 0xf7, 0x4e, 0xa6, 0xcd } };
-                        pcpcs->clsidCredentialProvider = clsidWindowsCredProvider;
+
+                        // ЗАБЕЛЕЖКА: clsidCredentialProvider се оставя като GUID_NULL (от ZeroMemory)
+                        // Не задаваме Windows Password CP CLSID - следваме Microsoft SampleCredentialProvider
+                        // КРИТИЧНА ПОПРАВКА: Задаваме правилния auth package - без това "потребителят не е намерен"!
+                        pcpcs->ulAuthenticationPackage = ulAuthPackage;
                         pcpcs->rgbSerialization = authBuffer;
-                        pcpcs->cbSerialization = actualBufferSize; // Използваме действителния размер който функцията е записала
-                        
+                        pcpcs->cbSerialization = actualBufferSize; // Действителният размер от CredPackAuthenticationBufferW
+
                         *pcpgsr = CPGSR_RETURN_CREDENTIAL_FINISHED;
                         
                         if (ppszOptionalStatusText)
@@ -536,10 +598,14 @@ IFACEMETHODIMP Credential::GetSerialization(
                     }
                     else
                     {
+                        DWORD secondCallError = GetLastError();
+                        LogCredentialDebug(L"CredPackAuthenticationBufferW failed on second call, error: " + std::to_wstring(secondCallError));
+                        
                         CoTaskMemFree(authBuffer);
                         authBuffer = NULL;
-                        DWORD error = GetLastError();
-                        LogCredentialDebug(L"CredPackAuthenticationBufferW failed to create buffer, error: " + std::to_wstring(error));
+                        
+                        // Fallback към ръчно въвеждане на парола
+                        LogCredentialDebug(L"Second CredPackAuthenticationBufferW failed, falling back to manual password entry");
                     }
                 }
                 else
@@ -549,8 +615,7 @@ IFACEMETHODIMP Credential::GetSerialization(
             }
             else
             {
-                DWORD error = GetLastError();
-                LogCredentialDebug(L"CredPackAuthenticationBufferW failed to get buffer size, error: " + std::to_wstring(error));
+                LogCredentialDebug(L"CredPackAuthenticationBufferW failed to get buffer size. Result: " + std::to_wstring(result) + L", Error: " + std::to_wstring(lastError));
             }
             
             // Fallback: Ако CredPackAuthenticationBuffer не работи
@@ -633,11 +698,43 @@ IFACEMETHODIMP Credential::GetSerialization(
 }
 
 IFACEMETHODIMP Credential::ReportResult(
-    NTSTATUS ntsStatus, 
-    NTSTATUS ntsSubstatus, 
-    LPWSTR* ppszOptionalStatusText, 
+    NTSTATUS ntsStatus,
+    NTSTATUS ntsSubstatus,
+    LPWSTR* ppszOptionalStatusText,
     CREDENTIAL_PROVIDER_STATUS_ICON* pcpsiOptionalStatusIcon)
 {
+    // Логваме точния NTSTATUS за диагностика на проблеми с логина
+    LogCredentialDebug(L"ReportResult: ntsStatus=0x" + FormatHex((DWORD)ntsStatus) +
+                       L", ntsSubstatus=0x" + FormatHex((DWORD)ntsSubstatus));
+
+    // Известни NTSTATUS кодове (помагат за диагностика):
+    // 0x00000000 = STATUS_SUCCESS              - логинът е успешен
+    // 0xC000006D = STATUS_LOGON_FAILURE        - грешна парола или потребител (общ)
+    // 0xC0000064 = STATUS_NO_SUCH_USER         - потребителят не съществува в домейна
+    // 0xC000006A = STATUS_WRONG_PASSWORD       - паролата е грешна
+    // 0xC0000022 = STATUS_ACCESS_DENIED        - нямате достъп
+    // 0xC000015B = STATUS_LOGON_TYPE_NOT_GRANTED - типът на логина не е разрешен
+    // 0xC000006C = STATUS_PASSWORD_EXPIRED     - паролата е изтекла
+    // 0xC0000234 = STATUS_ACCOUNT_LOCKED_OUT   - акаунтът е заключен
+    // 0xC0000193 = STATUS_ACCOUNT_EXPIRED      - акаунтът е изтекъл
+
+    if (ntsStatus == 0)
+        LogCredentialDebug(L"ReportResult: Логинът е УСПЕШЕН! (STATUS_SUCCESS)");
+    else if (ntsStatus == (NTSTATUS)0xC000006D)
+        LogCredentialDebug(L"ReportResult: STATUS_LOGON_FAILURE - неуспешен логин");
+    else if (ntsStatus == (NTSTATUS)0xC0000064)
+        LogCredentialDebug(L"ReportResult: STATUS_NO_SUCH_USER - потребителят не е намерен в домейна!");
+    else if (ntsStatus == (NTSTATUS)0xC000006A)
+        LogCredentialDebug(L"ReportResult: STATUS_WRONG_PASSWORD - грешна парола");
+    else if (ntsStatus == (NTSTATUS)0xC000015B)
+        LogCredentialDebug(L"ReportResult: STATUS_LOGON_TYPE_NOT_GRANTED - типът логин не е разрешен");
+    else if (ntsStatus == (NTSTATUS)0xC000006C)
+        LogCredentialDebug(L"ReportResult: STATUS_PASSWORD_EXPIRED - паролата е изтекла");
+    else if (ntsStatus == (NTSTATUS)0xC0000234)
+        LogCredentialDebug(L"ReportResult: STATUS_ACCOUNT_LOCKED_OUT - акаунтът е заключен");
+    else
+        LogCredentialDebug(L"ReportResult: Непознат NTSTATUS статус");
+
     return S_OK;
 }
 
@@ -692,6 +789,9 @@ void Credential::PollingThreadProc()
         }
         
         int status = _apiClient->GetSessionStatus(_sessionId);
+        
+        // Кешираме статуса за бърз достъп в IsSessionApproved()
+        _cachedSessionStatus.store(status);
         
         if (status == 1) // Approved
         {
@@ -847,9 +947,24 @@ void Credential::UpdateQrCode()
 
 bool Credential::IsSessionApproved() const
 {
-    if (_sessionId.empty() || _cpus != CPUS_LOGON || _apiClient == nullptr)
+    if (_sessionId.empty() || _apiClient == nullptr)
         return false;
+    // И при логин, и при отключване (unlock) трябва да признаем одобрена сесия
+    if (_cpus != CPUS_LOGON && _cpus != CPUS_UNLOCK_WORKSTATION)
+        return false;
+
+    // Използваме кеширания статус ако е наличен (одобрен или отхвърлен)
+    int cachedStatus = _cachedSessionStatus.load();
+    if (cachedStatus == 1) // Approved
+    {
+        return true;
+    }
+    if (cachedStatus == 2 || cachedStatus == 3) // Rejected или Expired
+    {
+        return false;
+    }
     
+    // Ако кешираният статус е Unknown (-1) или Pending (0), правим HTTP заявка
     int status = _apiClient->GetSessionStatus(_sessionId);
     return (status == 1); // Approved
 }

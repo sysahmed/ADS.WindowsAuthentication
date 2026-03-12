@@ -154,40 +154,107 @@ public class LogsController : ControllerBase
     /// Получава лог запис от клиент и го записва в базата данни
     /// </summary>
     [HttpPost("upload")]
-    public async Task<IActionResult> UploadLog([FromBody] LogUploadRequest request)
+    public async Task<IActionResult> UploadLog([FromBody] LogUploadRequest? request)
     {
         try
         {
-            if (string.IsNullOrEmpty(request.Message))
+            // Проверка за null request
+            if (request == null)
             {
-                return BadRequest(new { message = "Message е задължителен" });
+                _logger.LogWarning("API: UploadLog получи null request");
+                return BadRequest(new { message = "Request е задължителен" });
             }
 
-            var logEntry = new LogEntryEntity
+            // Валидация на задължителните полета
+            if (string.IsNullOrWhiteSpace(request.Message))
             {
-                MachineName = request.MachineName ?? Environment.MachineName,
-                Username = request.Username ?? Environment.UserName,
-                Domain = request.Domain ?? Environment.UserDomainName,
-                Level = request.Level ?? "INFO",
-                Message = request.Message,
-                Timestamp = request.Timestamp ?? DateTime.Now,
-                Source = request.Source,
-                ExceptionType = request.ExceptionType,
-                StackTrace = request.StackTrace
-            };
+                _logger.LogWarning("API: UploadLog получи празно Message поле");
+                return BadRequest(new { message = "Message е задължителен и не може да е празен" });
+            }
 
-            _dbContext.LogEntries.Add(logEntry);
-            await _dbContext.SaveChangesAsync();
+            try
+            {
+                // Санитизиране на входните данни
+                var machineName = string.IsNullOrWhiteSpace(request.MachineName) 
+                    ? Environment.MachineName 
+                    : request.MachineName.Trim();
+                
+                var username = string.IsNullOrWhiteSpace(request.Username) 
+                    ? Environment.UserName 
+                    : request.Username.Trim();
+                
+                var domain = string.IsNullOrWhiteSpace(request.Domain) 
+                    ? Environment.UserDomainName 
+                    : request.Domain.Trim();
+                
+                var level = string.IsNullOrWhiteSpace(request.Level) 
+                    ? "INFO" 
+                    : request.Level.Trim().ToUpper();
+                
+                var message = request.Message.Trim();
+                var source = string.IsNullOrWhiteSpace(request.Source) 
+                    ? null 
+                    : request.Source.Trim();
+                
+                var exceptionType = string.IsNullOrWhiteSpace(request.ExceptionType) 
+                    ? null 
+                    : request.ExceptionType.Trim();
+                
+                var stackTrace = string.IsNullOrWhiteSpace(request.StackTrace) 
+                    ? null 
+                    : request.StackTrace.Trim();
 
-            // Също така записваме в локален файл (ако искаме)
-            _logger.LogInfo($"Log received from {logEntry.MachineName}: [{logEntry.Level}] {logEntry.Message}");
+                var logEntry = new LogEntryEntity
+                {
+                    MachineName = machineName,
+                    Username = username,
+                    Domain = domain,
+                    Level = level,
+                    Message = message,
+                    Timestamp = request.Timestamp ?? DateTime.UtcNow,
+                    Source = source,
+                    ExceptionType = exceptionType,
+                    StackTrace = stackTrace
+                };
 
-            return Ok(new { message = "Логът е записан успешно", id = logEntry.Id });
+                _dbContext.LogEntries.Add(logEntry);
+                await _dbContext.SaveChangesAsync();
+
+                // Логване на успешния запис
+                _logger.LogInfo($"Log received from {logEntry.MachineName}: [{logEntry.Level}] {logEntry.Message}");
+
+                return Ok(new { message = "Логът е записан успешно", id = logEntry.Id });
+            }
+            catch (DbUpdateException dbEx)
+            {
+                // Специална обработка за database грешки
+                _logger.LogError($"Database грешка при запис на лог: {dbEx.Message}", dbEx);
+                if (dbEx.InnerException != null)
+                {
+                    _logger.LogError($"Inner exception: {dbEx.InnerException.Message}", dbEx.InnerException);
+                }
+                
+                // Връщаме успешен отговор но логваме грешката (за да не блокираме клиента)
+                return Ok(new { message = "Логът е получен (възможна грешка при запис в базата данни)" });
+            }
+            catch (ArgumentException argEx)
+            {
+                // Обработка на грешки при валидация на аргументи
+                _logger.LogError($"Грешка при валидация на аргументи: {argEx.Message}", argEx);
+                return Ok(new { message = "Логът е получен (възможна грешка при валидация)" });
+            }
         }
         catch (Exception ex)
         {
             _logger.LogError($"Грешка при запис на лог: {ex.Message}", ex);
-            return StatusCode(500, new { message = "Грешка при запис на лог" });
+            _logger.LogError($"Stack trace: {ex.StackTrace}");
+            if (ex.InnerException != null)
+            {
+                _logger.LogError($"Inner exception: {ex.InnerException.Message}", ex.InnerException);
+            }
+            
+            // Връщаме успешен отговор но логваме грешката (за да не блокираме клиента)
+            return Ok(new { message = "Логът е получен (възможна грешка при обработка)" });
         }
     }
 

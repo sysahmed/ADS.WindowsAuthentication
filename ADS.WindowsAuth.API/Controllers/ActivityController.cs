@@ -489,6 +489,32 @@ public class ActivityController : ControllerBase
     }
 
     /// <summary>
+    /// Премахване на всички данни за конкретна машина
+    /// </summary>
+    [HttpDelete("machine/{machineName}")]
+    public IActionResult RemoveMachine(string machineName)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(machineName))
+                return BadRequest(new { message = "Името на машината е задължително" });
+
+            bool removed = _activityMonitor.RemoveMachine(machineName);
+            _logger.LogInfo($"API: Машина '{machineName}' е {(removed ? "премахната" : "не е намерена")}");
+
+            if (removed)
+                return Ok(new { message = $"Машина '{machineName}' е премахната успешно" });
+            else
+                return NotFound(new { message = $"Машина '{machineName}' не е намерена" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"API: Грешка при премахване на машина '{machineName}'", ex);
+            return StatusCode(500, new { message = "Грешка при премахване на машина" });
+        }
+    }
+
+    /// <summary>
     /// Получаване на всички активности
     /// </summary>
     [HttpGet("all")]

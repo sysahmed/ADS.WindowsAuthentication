@@ -21,6 +21,7 @@
 
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "shlwapi.lib")
+#pragma comment(lib, "Secur32.lib")
 
 // Forward declarations
 extern void DllAddRef();

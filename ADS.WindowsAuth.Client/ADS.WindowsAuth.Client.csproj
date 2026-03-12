@@ -16,13 +16,13 @@
 
   <ItemGroup>
     <!-- Копиране на appsettings.json в output директорията -->
-    <None Include="appsettings.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    <Content Include="appsettings.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <!-- Копиране на appsettings.Development.json само в Debug режим -->
-    <None Include="appsettings.Development.json" Condition="'$(Configuration)' == 'Debug'">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    <Content Include="appsettings.Development.json" Condition="'$(Configuration)' == 'Debug'">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <None Include="C:\Users\ahmed.NURSAN\Pictures\Screenshot 2025-10-02 113836.png">
       <Pack>True</Pack>
       <PackagePath>\</PackagePath>

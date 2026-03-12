@@ -56,5 +56,10 @@ public interface IActivityMonitorService
     /// Получава всички активности
     /// </summary>
     List<UserActivity> GetAllActivities(DateTime? fromDate = null, DateTime? toDate = null);
+
+    /// <summary>
+    /// Премахва всички активности за дадена машина
+    /// </summary>
+    bool RemoveMachine(string machineName);
 }
 

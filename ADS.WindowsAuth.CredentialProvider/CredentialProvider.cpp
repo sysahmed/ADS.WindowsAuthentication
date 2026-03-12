@@ -68,24 +68,27 @@ HRESULT CredentialProvider::SetUsageScenario(CREDENTIAL_PROVIDER_USAGE_SCENARIO 
         _cpus = cpus;
         LogCredentialDebug(L"CredentialProvider::SetUsageScenario: Scenario is valid, creating Credential...");
         
-        // Създаваме credential-а по-рано за да можем да проверяваме статуса в GetCredentialCount
-        if (_pCredential == NULL)
+        // Спираме старата Credential преди да създадем нова
+        if (_pCredential != NULL)
         {
-            _pCredential = new Credential();
-            if (_pCredential)
-            {
-                LogCredentialDebug(L"CredentialProvider::SetUsageScenario: Credential created successfully!");
-                // Initialize ще се извика отново в GetCredentialAt, но тук го създаваме по-рано
-                // за да имаме достъп до него в GetCredentialCount
-            }
-            else
-            {
-                LogCredentialDebug(L"CredentialProvider::SetUsageScenario: Failed to create Credential!");
-            }
+            LogCredentialDebug(L"CredentialProvider::SetUsageScenario: Stopping old Credential polling thread...");
+            _pCredential->StopPolling();
+            delete _pCredential;
+            _pCredential = NULL;
+            LogCredentialDebug(L"CredentialProvider::SetUsageScenario: Old Credential deleted");
+        }
+        
+        // Създаваме credential-а по-рано за да можем да проверяваме статуса в GetCredentialCount
+        _pCredential = new Credential();
+        if (_pCredential)
+        {
+            LogCredentialDebug(L"CredentialProvider::SetUsageScenario: Credential created successfully!");
+            // Initialize ще се извика отново в GetCredentialAt, но тук го създаваме по-рано
+            // за да имаме достъп до него в GetCredentialCount
         }
         else
         {
-            LogCredentialDebug(L"CredentialProvider::SetUsageScenario: Credential already exists!");
+            LogCredentialDebug(L"CredentialProvider::SetUsageScenario: Failed to create Credential!");
         }
         
         hr = S_OK;

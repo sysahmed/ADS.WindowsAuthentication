@@ -18,6 +18,7 @@ public class HomeController : Controller
     private readonly IActivityMonitorService _activityMonitor;
     private readonly IPolicyService _policyService;
     private readonly HttpClient _httpClient;
+    private readonly IConfiguration _configuration;
 
     public HomeController(
         ISessionService sessionService,
@@ -25,7 +26,8 @@ public class HomeController : Controller
         ILoggerService logger,
         IActivityMonitorService activityMonitor,
         IPolicyService policyService,
-        IHttpClientFactory httpClientFactory)
+        IHttpClientFactory httpClientFactory,
+        IConfiguration configuration)
     {
         _sessionService = sessionService;
         _windowsAuthService = windowsAuthService;
@@ -33,6 +35,7 @@ public class HomeController : Controller
         _activityMonitor = activityMonitor;
         _policyService = policyService;
         _httpClient = httpClientFactory.CreateClient();
+        _configuration = configuration;
     }
 
     /// <summary>
@@ -140,12 +143,17 @@ public class HomeController : Controller
                 return View();
             }
 
+            // Домейнът идва от appsettings (ActiveDirectory:DomainName), НЕ от сесията
+            // session.Domain може да е machine name ("AHMEDITDESK") ако е създадена от Credential Provider
+            string defaultDomain = _configuration["ActiveDirectory:DomainName"] ?? string.Empty;
+
             ViewBag.Token = token;
             ViewBag.Username = session.Username;
-            ViewBag.Domain = session.Domain;
+            ViewBag.Domain = defaultDomain;       // Домейн от appsettings - може да се смени от потребителя
+            ViewBag.DefaultDomain = defaultDomain; // За JavaScript - за да не се презаписва с machine name
             ViewBag.MachineName = session.MachineName;
 
-            _logger.LogInfo($"Auth страница заявена за токен: {token.Substring(0, Math.Min(8, token.Length))}... (Сесия: {session.SessionId})");
+            _logger.LogInfo($"Auth страница заявена за токен: {token.Substring(0, Math.Min(8, token.Length))}... (Сесия: {session.SessionId}, Domain: {defaultDomain})");
 
             return View();
         }
@@ -415,6 +423,49 @@ public class HomeController : Controller
     }
 
     /// <summary>
+    /// Страница за преглед на всички машини с активност (Monitor)
+    /// </summary>
+    [HttpGet("monitor")]
+    public IActionResult Monitor()
+    {
+        try
+        {
+            var activities = _activityMonitor.GetAllActivities();
+
+            // Групираме по машина - взимаме последната активност за всяка машина
+            var machines = activities
+                .GroupBy(a => a.MachineName, StringComparer.OrdinalIgnoreCase)
+                .Select(g => new MachineMonitorInfo
+                {
+                    MachineName = g.Key,
+                    Username = g.OrderByDescending(a => a.StartTime).First().Username,
+                    Domain = g.OrderByDescending(a => a.StartTime).First().Domain,
+                    LastSeen = g.Max(a => a.EndTime ?? a.StartTime),
+                    StartTime = g.OrderByDescending(a => a.StartTime).First().StartTime,
+                    IsActive = g.Any(a => !a.EndTime.HasValue),
+                    TotalUsers = g.Select(a => a.Username).Distinct().Count(),
+                    ScreenTimeSeconds = g.Sum(a => a.ScreenTimeSeconds),
+                    ApplicationsCount = g.Sum(a => a.OpenedApplications.Count),
+                    FilesCount = g.Sum(a => a.OpenedFiles.Count)
+                })
+                .OrderByDescending(m => m.IsActive)
+                .ThenByDescending(m => m.LastSeen)
+                .ToList();
+
+            ViewBag.Machines = machines;
+            ViewBag.TotalMachines = machines.Count;
+            ViewBag.ActiveMachines = machines.Count(m => m.IsActive);
+
+            return View();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Грешка при зареждане на Monitor view", ex);
+            return View("Error");
+        }
+    }
+
+    /// <summary>
     /// Страница за управление на настройки на Monitor Service
     /// </summary>
     [HttpGet("monitor-settings")]
@@ -485,6 +536,38 @@ public class LevelStat
 {
     public string Level { get; set; } = string.Empty;
     public int Count { get; set; }
+}
+
+/// <summary>
+/// Модел за информация за машина в Monitor изгледа
+/// </summary>
+public class MachineMonitorInfo
+{
+    public string MachineName { get; set; } = string.Empty;
+    public string Username { get; set; } = string.Empty;
+    public string Domain { get; set; } = string.Empty;
+    public DateTime LastSeen { get; set; }
+    public DateTime StartTime { get; set; }
+    public bool IsActive { get; set; }
+    public int TotalUsers { get; set; }
+    public int ScreenTimeSeconds { get; set; }
+    public int ApplicationsCount { get; set; }
+    public int FilesCount { get; set; }
+
+    public string ScreenTimeFormatted =>
+        TimeSpan.FromSeconds(ScreenTimeSeconds).ToString(ScreenTimeSeconds >= 3600 ? @"hh\:mm\:ss" : @"mm\:ss");
+
+    public string LastSeenAgo
+    {
+        get
+        {
+            var diff = DateTime.Now - LastSeen;
+            if (diff.TotalMinutes < 1) return "преди малко";
+            if (diff.TotalMinutes < 60) return $"преди {(int)diff.TotalMinutes} мин.";
+            if (diff.TotalHours < 24) return $"преди {(int)diff.TotalHours} ч.";
+            return $"преди {(int)diff.TotalDays} дни";
+        }
+    }
 }
 
 // ... existing code ...

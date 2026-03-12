@@ -134,10 +134,9 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// Получава статус на сесия (поддържа и SessionId и AccessToken)
+    /// Получава статус на сесия (SessionId или AccessToken). Връща винаги HTTP 200 с JSON status,
+    /// за да работи Credential Provider (при 404/500 получава празен отговор и остава в Pending).
     /// </summary>
-    /// <param name="sessionId">Идентификатор на сесията или AccessToken</param>
-    /// <returns>Статус на сесията</returns>
     [HttpGet("session/{sessionId}/status")]
     public IActionResult GetSessionStatus(string sessionId)
     {
@@ -145,71 +144,60 @@ public class AuthController : ControllerBase
         {
             if (string.IsNullOrEmpty(sessionId))
             {
-                _logger.LogWarning($"API: GetSessionStatus called with empty sessionId");
-                return BadRequest(new { message = "SessionId е задължителен" });
+                _logger.LogWarning("API: GetSessionStatus called with empty sessionId");
+                return Ok(new { status = "Expired" });
             }
 
             AuthSession? session = null;
 
-            // Първо опитай по SessionId
             try
             {
-                var allSessions = _sessionService.GetAllSessions();
-                session = allSessions?.FirstOrDefault(s => s?.SessionId == sessionId);
+                session = _sessionService.GetSessionById(sessionId);
             }
             catch (Exception ex1)
             {
-                _logger.LogWarning($"API: Грешка при GetAllSessions: {ex1.Message}");
-                // Продължаваме с опит по AccessToken
+                _logger.LogWarning($"API: GetSessionById error for {sessionId}: {ex1.Message}");
             }
-            
-            // Ако не е намерена, опитай по AccessToken
+
             if (session == null)
             {
                 try
-            {
-                session = _sessionService.GetSessionByToken(sessionId);
+                {
+                    session = _sessionService.GetSessionByToken(sessionId);
                 }
                 catch (Exception ex2)
                 {
-                    _logger.LogWarning($"API: Грешка при GetSessionByToken: {ex2.Message}");
+                    _logger.LogWarning($"API: GetSessionByToken error for {sessionId}: {ex2.Message}");
                 }
             }
-            
+
             if (session == null)
             {
-                // Rate limiting: Логваме само веднъж на всеки 30 секунди за същия sessionId
-                // (SessionService вече има собствен rate limiting, но тук добавяме допълнителна защита)
-                string sessionKey = sessionId.Length > 8 ? sessionId.Substring(0, 8) : sessionId;
-                _logger.LogWarning($"API: Сесията не е намерена: {sessionKey}...");
-                return NotFound(new { message = "Сесията не е намерена" });
+                string key = sessionId.Length > 8 ? sessionId.Substring(0, 8) : sessionId;
+                _logger.LogWarning($"API: Session not found: {key}... (returning Expired for Credential Provider)");
+                return Ok(new { status = "Expired" });
             }
 
-            // Ако сесията е одобрена, връщаме пълната информация (включително username, domain и парола за login)
             if (session.Status == SessionStatus.Approved)
             {
-                // Използваме ApprovedBy за да извлечем username
                 string username = session.WindowsUsername ?? string.Empty;
-                
-                // Ако има ApprovedBy, опитваме се да извлечем username от него
+                string domain = "nursan";
                 if (!string.IsNullOrEmpty(session.ApprovedBy) && session.ApprovedBy.Contains('@'))
                 {
                     var parts = session.ApprovedBy.Split('@');
                     if (parts.Length == 2)
                     {
                         username = parts[0];
+                        domain = parts[1]; // Реалният домейн от формата (nursan или machine name)
                     }
                 }
-                
-                // Винаги използваме домейн "nursan"
-                string domain = "nursan";
-                
-                return Ok(new 
-                { 
+
+                return Ok(new
+                {
                     status = session.Status.ToString(),
                     username = username,
                     domain = domain,
-                    password = session.ApprovedPassword ?? string.Empty, // Временно запазена парола за автоматичен login
+                    password = session.ApprovedPassword ?? string.Empty,
                     sessionId = session.SessionId
                 });
             }
@@ -218,13 +206,10 @@ public class AuthController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError($"API: Грешка при получаване на статус на сесия {sessionId}: {ex.Message}", ex);
-            _logger.LogError($"API: Stack trace: {ex.StackTrace}");
+            _logger.LogError($"API: GetSessionStatus exception for {sessionId}: {ex.Message}", ex);
             if (ex.InnerException != null)
-            {
-                _logger.LogError($"API: Inner exception: {ex.InnerException.Message}");
-            }
-            return StatusCode(500, new { message = "Грешка при получаване на статус", error = ex.Message });
+                _logger.LogError($"API: Inner: {ex.InnerException.Message}");
+            return Ok(new { status = "Expired" });
         }
     }
 

@@ -39,8 +39,8 @@ public static class SecureConfigurationProvider
             configuration["Environment"]?.Equals("Development", StringComparison.OrdinalIgnoreCase) == true ||
             configuration["EnvironmentName"]?.Equals("Development", StringComparison.OrdinalIgnoreCase) == true;
         
-        // Validate critical settings
-        ValidateSecureSettings(secureSettings, isDev);
+        // Validate critical settings (предаваме configuration за да проверим ActiveDirectory:Enabled)
+        ValidateSecureSettings(secureSettings, configuration, isDev);
         
         return secureSettings;
     }
@@ -48,20 +48,21 @@ public static class SecureConfigurationProvider
     /// <summary>
     /// Validates that critical secure settings are available
     /// </summary>
-    private static void ValidateSecureSettings(SecureSettings settings, bool isDevelopment = false)
+    private static void ValidateSecureSettings(SecureSettings settings, IConfiguration configuration, bool isDevelopment = false)
     {
         var errors = new List<string>();
-        
+        bool adEnabled = configuration.GetValue<bool>("ActiveDirectory:Enabled", false);
+
+        // Паролата за AD се изисква само когато Active Directory е включен
         if (string.IsNullOrWhiteSpace(settings.ActiveDirectoryServicePassword))
         {
             if (isDevelopment)
             {
-                // In development, use a default password or skip validation
                 settings.ActiveDirectoryServicePassword = "DevPassword123!";
             }
-            else
+            else if (adEnabled)
             {
-                errors.Add("Active Directory service password is not configured. Set ADS_AD_SERVICE_PASSWORD environment variable.");
+                errors.Add("Active Directory е включен, но паролата не е зададена. Задайте ADS_AD_SERVICE_PASSWORD или ActiveDirectory:ServicePassword в appsettings.Production.json.");
             }
         }
         

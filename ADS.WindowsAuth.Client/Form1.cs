@@ -114,7 +114,6 @@ public partial class Form1 : Form
     private async void Form1_Load(object sender, EventArgs e)
     {
         await RefreshQrCodeAsync();
-        timerStatusCheck.Start();
     }
 
     private async void ButtonRefresh_Click(object sender, EventArgs e)
@@ -152,10 +151,9 @@ public partial class Form1 : Form
                 // Ако не успее, използваме Environment
             }
             
-            // Нека API-то автоматично да детектира текущия потребител и домейн
-            _logger.LogInfo("Създаване на сесия с автоматична детекция на потребител и домейн");
-            
-            _currentSession = await _apiClient.CreateSessionAsync();
+            _logger.LogInfo($"Създаване на сесия с потребител: {username}@{domain}");
+
+            _currentSession = await _apiClient.CreateSessionAsync(username, domain);
 
             if (_currentSession != null)
             {
@@ -373,7 +371,8 @@ public partial class Form1 : Form
         }
         else
         {
-            _logger.LogWarning("⚠️ [TIMER] Timer tick, но няма активна сесия");
+            timerStatusCheck.Stop();
+            _logger.LogWarning("⚠️ [TIMER] Няма активна сесия - таймерът е спрян");
         }
     }
 

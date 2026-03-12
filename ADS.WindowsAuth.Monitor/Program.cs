@@ -6,11 +6,46 @@ using Microsoft.Extensions.Configuration;
 
 string applicationDirectory = AppDomain.CurrentDomain.BaseDirectory;
 
+// За Windows Service, опитваме се да намерим правилната директория
+// Ако appsettings.json не е в BaseDirectory, опитваме други локации
+if (!File.Exists(Path.Combine(applicationDirectory, "appsettings.json")))
+{
+    // Опит 1: Директорията на изпълнимия файл
+    string exeDirectory = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? applicationDirectory;
+    if (File.Exists(Path.Combine(exeDirectory, "appsettings.json")))
+    {
+        applicationDirectory = exeDirectory;
+    }
+    // Опит 2: Стандартна локация C:\ADS\Monitor
+    else if (File.Exists(@"C:\ADS\Monitor\appsettings.json"))
+    {
+        applicationDirectory = @"C:\ADS\Monitor";
+    }
+}
+
 var builder = Host.CreateApplicationBuilder(args);
 
 // Явно зареждане на appsettings.json от директорията на приложението (за Windows Service)
 string appsettingsPath = Path.Combine(applicationDirectory, "appsettings.json");
-if (File.Exists(appsettingsPath))
+bool configFileExists = File.Exists(appsettingsPath);
+
+// Логване преди LoggerService (временен файл)
+try
+{
+    string tempLogPath = Path.Combine(applicationDirectory, "LOGS");
+    if (!Directory.Exists(tempLogPath))
+    {
+        Directory.CreateDirectory(tempLogPath);
+    }
+    string preLoggerLogPath = Path.Combine(tempLogPath, $"PRE_LOGGER_{DateTime.Now:yyyyMMdd}.LOG");
+    string preLoggerInfo = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [INFO] Application Directory: {applicationDirectory}\n" +
+                           $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [INFO] AppSettings path: {appsettingsPath}\n" +
+                           $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [INFO] AppSettings exists: {configFileExists}\n";
+    File.AppendAllText(preLoggerLogPath, preLoggerInfo);
+}
+catch { }
+
+if (configFileExists)
 {
     builder.Configuration.AddJsonFile(appsettingsPath, optional: false, reloadOnChange: true);
 }
@@ -18,6 +53,52 @@ if (File.Exists(appsettingsPath))
 // Зареждане на конфигурация
 IConfigurationSection serviceConfigSection = builder.Configuration.GetSection("ServiceConfiguration");
 string? apiUrl = serviceConfigSection.GetValue<string>("ServiceUrl");
+
+// Ако GetValue връща null, опитваме директно от конфигурацията
+if (string.IsNullOrEmpty(apiUrl))
+{
+    apiUrl = builder.Configuration["ServiceConfiguration:ServiceUrl"];
+}
+
+// Логване на конфигурацията преди Registry проверка
+string configFromFile = apiUrl ?? "NULL";
+string configFromRegistry = "NULL";
+
+// Първо опитваме да прочетем ServiceUrl от Registry (ако е конфигуриран там)
+if (string.IsNullOrEmpty(apiUrl))
+{
+    try
+    {
+        using (var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\ADS\WindowsAuth", false))
+        {
+            if (key != null)
+            {
+                var registryUrl = key.GetValue("ServiceUrl") as string;
+                if (!string.IsNullOrEmpty(registryUrl))
+                {
+                    apiUrl = registryUrl;
+                    configFromRegistry = registryUrl;
+                }
+                else
+                {
+                    configFromRegistry = "NULL (key exists but ServiceUrl is empty)";
+                }
+            }
+            else
+            {
+                configFromRegistry = "NULL (Registry key does not exist)";
+            }
+        }
+    }
+    catch (Exception regEx)
+    {
+        configFromRegistry = $"NULL (Exception: {regEx.Message})";
+    }
+}
+else
+{
+    configFromRegistry = "NOT_CHECKED (config file had value)";
+}
 
 // Логване на конфигурацията за debugging (временен файл преди LoggerService)
 try
@@ -29,8 +110,10 @@ try
     }
     string configLogPath = Path.Combine(tempLogPath, $"CONFIG_STARTUP_{DateTime.Now:yyyyMMdd}.LOG");
     string configInfo = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [INFO] Application Directory: {applicationDirectory}\n" +
-                       $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [INFO] ServiceUrl from config: {apiUrl ?? "NULL"}\n" +
-                       $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [INFO] Config file exists: {File.Exists(Path.Combine(applicationDirectory, "appsettings.json"))}\n";
+                       $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [INFO] Config file exists: {File.Exists(Path.Combine(applicationDirectory, "appsettings.json"))}\n" +
+                       $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [INFO] ServiceUrl from config file: {configFromFile}\n" +
+                       $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [INFO] ServiceUrl from Registry: {configFromRegistry}\n" +
+                       $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [INFO] Final API URL for LoggerService: {apiUrl ?? "NULL"}\n";
     File.AppendAllText(configLogPath, configInfo);
 }
 catch { }
@@ -75,6 +158,30 @@ ServiceConfiguration serviceConfig = new ServiceConfiguration
     RetryInterval = serviceConfigSection.GetValue<int>("RetryInterval", 60),
     MaxRetries = serviceConfigSection.GetValue<int>("MaxRetries", 3)
 };
+
+// Актуализиране на ServiceUrl от Registry (ако е конфигуриран там)
+if (string.IsNullOrEmpty(serviceConfig.ServiceUrl))
+{
+    try
+    {
+        using (var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\ADS\WindowsAuth", false))
+        {
+            if (key != null)
+            {
+                var registryUrl = key.GetValue("ServiceUrl") as string;
+                if (!string.IsNullOrEmpty(registryUrl))
+                {
+                    serviceConfig.ServiceUrl = registryUrl;
+                    loggerService.LogInfo($"ServiceUrl зареден от Registry: {registryUrl}");
+                }
+            }
+        }
+    }
+    catch (Exception regEx)
+    {
+        loggerService.LogWarning($"Грешка при четене на ServiceUrl от Registry: {regEx.Message}");
+    }
+}
 
 // Зареждане на AD настройки
 IConfigurationSection adSection = builder.Configuration.GetSection("ActiveDirectory");

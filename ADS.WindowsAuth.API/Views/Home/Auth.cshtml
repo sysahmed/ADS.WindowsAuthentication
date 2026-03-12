@@ -68,6 +68,7 @@ else if (!string.IsNullOrEmpty(ViewBag.Token as string))
 <form method="post" asp-action="AuthPost" id="authForm">
     @Html.AntiForgeryToken()
     <input type="hidden" name="token" id="tokenInput" value="@ViewBag.Token" />
+    <input type="hidden" id="defaultDomain" value="@ViewBag.DefaultDomain" />
     
     <div class="mb-3">
         <label for="username" class="form-label">Потребителско име</label>

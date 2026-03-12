@@ -83,18 +83,26 @@ public class ApiClient
             {
                 try
                 {
+                    _logger?.LogInfo($"[Attempt {attempt}/{maxRetries}] Изпращане на POST заявка към {_apiBaseUrl}{endpoint}...");
                     response = await _httpClient.PostAsync(endpoint, content);
+                    _logger?.LogInfo($"[Attempt {attempt}/{maxRetries}] Получен отговор: {(int)response.StatusCode}");
                     break; // Успех - излизаме от цикъла
                 }
                 catch (HttpRequestException ex) when (attempt < maxRetries)
                 {
-                    _logger?.LogWarning($"Опит {attempt}/{maxRetries} неуспешен: {ex.Message}. Опитвам отново след {retryDelay}ms...");
+                    _logger?.LogWarning($"[Attempt {attempt}/{maxRetries}] HttpRequestException: {ex.Message}. Опитвам отново след {retryDelay}ms...");
                     await Task.Delay(retryDelay);
                     retryDelay *= 2; // Увеличаваме забавянето при всеки опит
                 }
                 catch (TaskCanceledException ex) when (attempt < maxRetries)
                 {
-                    _logger?.LogWarning($"Опит {attempt}/{maxRetries} - таймаут. Опитвам отново след {retryDelay}ms...");
+                    _logger?.LogWarning($"[Attempt {attempt}/{maxRetries}] TaskCanceledException (таймаут): {ex.Message}. Опитвам отново след {retryDelay}ms...");
+                    await Task.Delay(retryDelay);
+                    retryDelay *= 2;
+                }
+                catch (Exception ex) when (attempt < maxRetries)
+                {
+                    _logger?.LogWarning($"[Attempt {attempt}/{maxRetries}] Exception ({ex.GetType().Name}): {ex.Message}. Опитвам отново след {retryDelay}ms...");
                     await Task.Delay(retryDelay);
                     retryDelay *= 2;
                 }
@@ -102,6 +110,7 @@ public class ApiClient
             
             if (response == null)
             {
+                _logger?.LogError($"Неуспешни опити за свързване с API след {maxRetries} опита");
                 throw new HttpRequestException($"Неуспешни опити за свързване с API след {maxRetries} опита");
             }
             

@@ -87,6 +87,123 @@ void LogApiClientDebug(const std::wstring& message)
         << L"] [ApiClient] " << message << std::endl;
 }
 
+// Helper function to unescape JSON strings
+std::wstring UnescapeJsonString(const std::wstring& jsonString)
+{
+    std::wstring result;
+    result.reserve(jsonString.length());
+    
+    for (size_t i = 0; i < jsonString.length(); ++i)
+    {
+        if (jsonString[i] == L'\\' && i + 1 < jsonString.length())
+        {
+            wchar_t nextChar = jsonString[i + 1];
+            switch (nextChar)
+            {
+            case L'\"':
+                result += L'\"';
+                ++i;
+                break;
+            case L'\\':
+                result += L'\\';
+                ++i;
+                break;
+            case L'/':
+                result += L'/';
+                ++i;
+                break;
+            case L'b':
+                result += L'\b';
+                ++i;
+                break;
+            case L'f':
+                result += L'\f';
+                ++i;
+                break;
+            case L'n':
+                result += L'\n';
+                ++i;
+                break;
+            case L'r':
+                result += L'\r';
+                ++i;
+                break;
+            case L't':
+                result += L'\t';
+                ++i;
+                break;
+            case L'u':
+                // Unicode escape sequence \uXXXX
+                if (i + 5 < jsonString.length())
+                {
+                    std::wstring hexStr = jsonString.substr(i + 2, 4);
+                    wchar_t codePoint = (wchar_t)std::wcstol(hexStr.c_str(), nullptr, 16);
+                    result += codePoint;
+                    i += 5;
+                }
+                else
+                {
+                    result += jsonString[i];
+                }
+                break;
+            default:
+                result += jsonString[i];
+                break;
+            }
+        }
+        else
+        {
+            result += jsonString[i];
+        }
+    }
+    
+    return result;
+}
+
+// Helper function to extract JSON string value safely
+bool ExtractJsonStringValue(const std::wstring& json, const std::wstring& fieldName, std::wstring& value)
+{
+    std::wstring searchKey = L"\"" + fieldName + L"\":\"";
+    size_t pos = json.find(searchKey);
+    
+    if (pos == std::wstring::npos)
+    {
+        return false;
+    }
+    
+    pos += searchKey.length();
+    
+    // Find the closing quote, accounting for escaped quotes
+    size_t end = pos;
+    while (end < json.length())
+    {
+        if (json[end] == L'\\' && end + 1 < json.length())
+        {
+            // Skip escaped character
+            end += 2;
+        }
+        else if (json[end] == L'"')
+        {
+            // Found unescaped closing quote
+            break;
+        }
+        else
+        {
+            end++;
+        }
+    }
+    
+    if (end >= json.length())
+    {
+        return false;
+    }
+    
+    std::wstring rawValue = json.substr(pos, end - pos);
+    value = UnescapeJsonString(rawValue);
+    
+    return !value.empty();
+}
+
 std::wstring ApiClient::HttpRequest(const std::wstring& method, const std::wstring& path, const std::wstring& body)
 {
     HINTERNET hSession = NULL;
@@ -374,59 +491,21 @@ bool ApiClient::CreateSession(std::wstring& sessionId, std::wstring& accessToken
     
     LogApiClientDebug(L"CreateSession: Response received, length: " + std::to_wstring(response.length()));
 
-    // Парсване на JSON отговор (опростено)
-    size_t pos = response.find(L"\"sessionId\":\"");
-    if (pos != std::wstring::npos)
+    // Парсване на JSON отговор с безопасна функция
+    if (!ExtractJsonStringValue(response, L"sessionId", sessionId))
     {
-        pos += 13; // "sessionId":" = 13 символа
-        size_t end = response.find(L"\"", pos);
-        if (end != std::wstring::npos)
-        {
-            sessionId = response.substr(pos, end - pos);
-            LogApiClientDebug(L"Parsed sessionId: " + sessionId);
-        }
-        else
-        {
-            LogApiClientDebug(L"Failed to find end quote for sessionId");
-        }
-    }
-    else
-    {
-        LogApiClientDebug(L"Failed to find \"sessionId\":\" in response");
+        LogApiClientDebug(L"CreateSession: Failed to extract sessionId");
+        return false;
     }
 
-    pos = response.find(L"\"accessToken\":\"");
-    if (pos != std::wstring::npos)
+    if (!ExtractJsonStringValue(response, L"accessToken", accessToken))
     {
-        pos += 15; // "accessToken":" = 15 символа
-        size_t end = response.find(L"\"", pos);
-        if (end != std::wstring::npos)
-        {
-            accessToken = response.substr(pos, end - pos);
-            LogApiClientDebug(L"Parsed accessToken: " + accessToken.substr(0, 8) + L"...");
-        }
-        else
-        {
-            LogApiClientDebug(L"Failed to find end quote for accessToken");
-        }
-    }
-    else
-    {
-        LogApiClientDebug(L"Failed to find \"accessToken\":\" in response");
+        LogApiClientDebug(L"CreateSession: Failed to extract accessToken");
+        return false;
     }
 
-    bool success = !sessionId.empty() && !accessToken.empty();
-    if (success)
-    {
-        LogApiClientDebug(L"CreateSession: SUCCESS - SessionId: " + sessionId + L", AccessToken: " + accessToken.substr(0, 8) + L"...");
-    }
-    else
-    {
-        LogApiClientDebug(L"CreateSession: FAILED - SessionId empty: " + std::to_wstring(sessionId.empty()) + L", AccessToken empty: " + std::to_wstring(accessToken.empty()));
-        size_t previewLen = response.length() > 500 ? 500 : response.length();
-        LogApiClientDebug(L"CreateSession: Response was: " + response.substr(0, previewLen));
-    }
-    return success;
+    LogApiClientDebug(L"CreateSession: SUCCESS - SessionId: " + sessionId + L", AccessToken: " + accessToken.substr(0, 8) + L"...");
+    return true;
 }
 
 int ApiClient::GetSessionStatus(const std::wstring& sessionId)
@@ -437,20 +516,16 @@ int ApiClient::GetSessionStatus(const std::wstring& sessionId)
     if (response.empty())
         return 0; // Pending
 
-    // Парсване на статус
-    size_t pos = response.find(L"\"status\":\"");
-    if (pos != std::wstring::npos)
+    // Парсване на статус с безопасна функция
+    std::wstring status;
+    if (!ExtractJsonStringValue(response, L"status", status))
     {
-        pos += 10;
-        size_t end = response.find(L"\"", pos);
-        if (end != std::wstring::npos)
-        {
-            std::wstring status = response.substr(pos, end - pos);
-            if (status == L"Approved") return 1;
-            if (status == L"Rejected") return 2;
-            if (status == L"Expired") return 3;
-        }
+        return 0; // Pending - ако не можем да парсираме, приемаме че е pending
     }
+
+    if (status == L"Approved") return 1;
+    if (status == L"Rejected") return 2;
+    if (status == L"Expired") return 3;
 
     return 0; // Pending
 }
@@ -461,58 +536,48 @@ bool ApiClient::GetApprovedSessionInfo(const std::wstring& sessionId, std::wstri
     std::wstring response = HttpRequest(L"GET", path);
 
     if (response.empty())
+    {
+        LogApiClientDebug(L"GetApprovedSessionInfo: Response is empty");
         return false;
+    }
 
     // Парсване на статус
-    size_t pos = response.find(L"\"status\":\"");
-    if (pos == std::wstring::npos)
+    std::wstring status;
+    if (!ExtractJsonStringValue(response, L"status", status))
+    {
+        LogApiClientDebug(L"GetApprovedSessionInfo: Failed to extract status");
         return false;
+    }
     
-    pos += 10;
-    size_t end = response.find(L"\"", pos);
-    if (end == std::wstring::npos)
-        return false;
-    
-    std::wstring status = response.substr(pos, end - pos);
     if (status != L"Approved")
+    {
+        LogApiClientDebug(L"GetApprovedSessionInfo: Status is not Approved: " + status);
         return false;
+    }
 
     // Парсване на username
-    pos = response.find(L"\"username\":\"");
-    if (pos != std::wstring::npos)
+    if (!ExtractJsonStringValue(response, L"username", username))
     {
-        pos += 12; // "username":" = 12 символа
-        end = response.find(L"\"", pos);
-        if (end != std::wstring::npos)
-        {
-            username = response.substr(pos, end - pos);
-        }
+        LogApiClientDebug(L"GetApprovedSessionInfo: Failed to extract username");
+        return false;
     }
 
     // Парсване на domain
-    pos = response.find(L"\"domain\":\"");
-    if (pos != std::wstring::npos)
+    if (!ExtractJsonStringValue(response, L"domain", domain))
     {
-        pos += 10; // "domain":" = 10 символа
-        end = response.find(L"\"", pos);
-        if (end != std::wstring::npos)
-        {
-            domain = response.substr(pos, end - pos);
-        }
+        LogApiClientDebug(L"GetApprovedSessionInfo: Failed to extract domain");
+        return false;
     }
 
-    // Парсване на password
-    pos = response.find(L"\"password\":\"");
-    if (pos != std::wstring::npos)
+    // Парсване на password - ВАЖНО: Разпаковаваме JSON-escaped символи
+    if (!ExtractJsonStringValue(response, L"password", password))
     {
-        pos += 12; // "password":" = 12 символа
-        end = response.find(L"\"", pos);
-        if (end != std::wstring::npos)
-        {
-            password = response.substr(pos, end - pos);
-        }
+        LogApiClientDebug(L"GetApprovedSessionInfo: Failed to extract password");
+        return false;
     }
 
+    LogApiClientDebug(L"GetApprovedSessionInfo: SUCCESS - Username: " + username + L", Domain: " + domain + L", Password length: " + std::to_wstring(password.length()));
+    
     return !username.empty() && !domain.empty() && !password.empty();
 }
 

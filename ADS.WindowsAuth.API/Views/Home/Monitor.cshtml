@@ -1,0 +1,399 @@
+@using ADS.WindowsAuth.API.Controllers
+@{
+    ViewData["Title"] = "Монитор на машини";
+    var machines = ViewBag.Machines as List<MachineMonitorInfo> ?? new List<MachineMonitorInfo>();
+    int totalMachines = ViewBag.TotalMachines ?? 0;
+    int activeMachines = ViewBag.ActiveMachines ?? 0;
+}
+
+<div class="container-fluid mt-4 mb-5 px-4">
+
+    <!-- Заглавие -->
+    <div class="row mb-4">
+        <div class="col-12 text-center fade-in">
+            <h1 class="display-4 mb-2" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-weight: 800;">
+                🖥️ Монитор на машини
+            </h1>
+            <p class="lead text-white" style="text-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+                Преглед и управление на всички свързани компютри
+            </p>
+        </div>
+    </div>
+
+    <!-- Статистики -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="glass-card text-center py-3 fade-in">
+                <div style="font-size: 2.5rem;">🖥️</div>
+                <h2 class="mb-0" style="color: var(--primary); font-size: 2rem;">@totalMachines</h2>
+                <small class="text-muted">Общо машини</small>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="glass-card text-center py-3 fade-in" style="animation-delay:0.1s;">
+                <div style="font-size: 2.5rem;">✅</div>
+                <h2 class="mb-0" style="color: #28a745; font-size: 2rem;">@activeMachines</h2>
+                <small class="text-muted">Активни сега</small>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="glass-card text-center py-3 fade-in" style="animation-delay:0.2s;">
+                <div style="font-size: 2.5rem;">💤</div>
+                <h2 class="mb-0" style="color: #6c757d; font-size: 2rem;">@(totalMachines - activeMachines)</h2>
+                <small class="text-muted">Офлайн</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Алерт ако няма машини -->
+    @if (!machines.Any())
+    {
+        <div class="glass-card text-center py-5 fade-in">
+            <div style="font-size: 5rem; opacity: 0.3;">📡</div>
+            <h4 class="mt-3 mb-2">Няма свързани машини</h4>
+            <p class="text-muted mb-0">
+                Все още няма машини, изпратили данни към системата.<br>
+                Инсталирайте Monitor Service на клиентските компютри.
+            </p>
+        </div>
+    }
+    else
+    {
+        <!-- Лента с инструменти -->
+        <div class="glass-card mb-3 py-2 fade-in">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <input type="text" id="searchInput" class="form-control" style="max-width:260px;"
+                       placeholder="🔍 Търси машина..." oninput="filterMachines()" />
+                <div class="form-check form-switch ms-2 mb-0">
+                    <input class="form-check-input" type="checkbox" id="showOnlyActive" onchange="filterMachines()" />
+                    <label class="form-check-label text-white" for="showOnlyActive">Само активни</label>
+                </div>
+                <div class="ms-auto d-flex gap-2">
+                    <button class="btn btn-outline-primary btn-sm" onclick="refreshPage()">
+                        <i class="bi bi-arrow-clockwise"></i> Обнови
+                    </button>
+                    <span class="text-muted small d-flex align-items-center" id="lastRefresh"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Грид с машини -->
+        <div class="row g-3" id="machinesGrid">
+            @foreach (var machine in machines)
+            {
+                <div class="col-xl-3 col-lg-4 col-md-6 machine-card-wrapper fade-in"
+                     data-machine="@machine.MachineName.ToLower()"
+                     data-active="@machine.IsActive.ToString().ToLower()">
+                    <div class="glass-card h-100 position-relative machine-card @(machine.IsActive ? "machine-active" : "machine-offline")">
+
+                        <!-- Статус индикатор горе вдясно -->
+                        <div class="position-absolute top-0 end-0 m-2">
+                            @if (machine.IsActive)
+                            {
+                                <span class="badge badge-success badge-pulse px-2 py-1">● Онлайн</span>
+                            }
+                            else
+                            {
+                                <span class="badge badge-secondary px-2 py-1">○ Офлайн</span>
+                            }
+                        </div>
+
+                        <!-- Заглавие -->
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="machine-icon me-3">
+                                <span style="font-size: 2.2rem;">🖥️</span>
+                            </div>
+                            <div class="overflow-hidden">
+                                <h5 class="mb-0 text-truncate" title="@machine.MachineName" style="color: var(--primary); font-weight: 700;">
+                                    @machine.MachineName
+                                </h5>
+                                <small class="text-muted">
+                                    <i class="bi bi-person"></i>
+                                    @machine.Username@@@@machine.Domain
+                                </small>
+                            </div>
+                        </div>
+
+                        <!-- Статистики -->
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <div class="stat-mini">
+                                    <div class="stat-mini-icon">⏱️</div>
+                                    <div>
+                                        <div class="stat-mini-value">@machine.ScreenTimeFormatted</div>
+                                        <div class="stat-mini-label">Screen time</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="stat-mini">
+                                    <div class="stat-mini-icon">🖱️</div>
+                                    <div>
+                                        <div class="stat-mini-value">@machine.ApplicationsCount</div>
+                                        <div class="stat-mini-label">Приложения</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="stat-mini">
+                                    <div class="stat-mini-icon">📁</div>
+                                    <div>
+                                        <div class="stat-mini-value">@machine.FilesCount</div>
+                                        <div class="stat-mini-label">Файлове</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="stat-mini">
+                                    <div class="stat-mini-icon">👤</div>
+                                    <div>
+                                        <div class="stat-mini-value">@machine.TotalUsers</div>
+                                        <div class="stat-mini-label">Потребители</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Последна активност -->
+                        <div class="mb-3 px-2 py-1 rounded" style="background: rgba(255,255,255,0.05); font-size:0.8rem;">
+                            <i class="bi bi-clock text-muted"></i>
+                            <span class="text-muted"> Последна активност: </span>
+                            <strong class="text-white">@machine.LastSeenAgo</strong>
+                            <br>
+                            <small class="text-muted">@machine.LastSeen.ToString("dd.MM.yyyy HH:mm")</small>
+                        </div>
+
+                        <!-- Бутони -->
+                        <div class="d-flex gap-2">
+                            <a href="/logs?machineName=@Uri.EscapeDataString(machine.MachineName)"
+                               class="btn btn-sm btn-outline-primary flex-grow-1">
+                                <i class="bi bi-bar-chart"></i> Детайли
+                            </a>
+                            <button class="btn btn-sm btn-outline-danger"
+                                    onclick="removeMachine('@machine.MachineName')"
+                                    title="Премахни машина от списъка">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- Съобщение при филтриране без резултати -->
+        <div id="noResults" class="glass-card text-center py-4 mt-3" style="display:none;">
+            <div style="font-size: 3rem; opacity: 0.3;">🔍</div>
+            <p class="text-muted mt-2 mb-0">Няма намерени машини по зададените критерии</p>
+        </div>
+    }
+
+    <!-- Навигация -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="glass-card fade-in">
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="/" class="btn btn-outline-primary">
+                        <i class="bi bi-house"></i> Начало
+                    </a>
+                    <a href="/logs" class="btn btn-outline-primary">
+                        <i class="bi bi-file-text"></i> Логове
+                    </a>
+                    <a href="/system-logs" class="btn btn-outline-primary">
+                        <i class="bi bi-journal-code"></i> Системни логове
+                    </a>
+                    <a href="/monitor-settings" class="btn btn-outline-secondary">
+                        <i class="bi bi-gear"></i> Настройки на монитора
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модален прозорец за потвърждение -->
+<div class="modal fade" id="confirmRemoveModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="background: rgba(30,30,60,0.95); border: 1px solid rgba(255,255,255,0.15); border-radius: 16px;">
+            <div class="modal-header border-0">
+                <h5 class="modal-title">🗑️ Премахване на машина</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-white mb-1">Сигурни ли сте, че искате да премахнете:</p>
+                <h4 id="confirmMachineName" class="text-warning mb-3"></h4>
+                <div class="alert alert-warning" style="background: rgba(255,193,7,0.15); border-color: rgba(255,193,7,0.4);">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    Всички записи за активност на тази машина ще бъдат изтрити от паметта.
+                    <br><small>Ако машината е свързана, тя ще се появи отново при следващо изпращане на данни.</small>
+                </div>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отказ</button>
+                <button type="button" class="btn btn-danger" id="confirmRemoveBtn">
+                    <i class="bi bi-trash"></i> Премахни
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.machine-card {
+    transition: transform 0.2s, box-shadow 0.2s;
+    border-left: 4px solid transparent;
+}
+.machine-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 40px rgba(102,126,234,0.25);
+}
+.machine-active {
+    border-left-color: #28a745;
+}
+.machine-offline {
+    border-left-color: #6c757d;
+    opacity: 0.85;
+}
+.stat-mini {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    padding: 0.35rem 0.5rem;
+}
+.stat-mini-icon {
+    font-size: 1.1rem;
+    line-height: 1;
+}
+.stat-mini-value {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: white;
+    line-height: 1;
+}
+.stat-mini-label {
+    font-size: 0.65rem;
+    color: rgba(255,255,255,0.5);
+    line-height: 1;
+}
+</style>
+
+<script>
+    // Автоматично обновяване на страницата на всеки 60 секунди
+    let autoRefreshTimer = null;
+
+    function startAutoRefresh() {
+        updateRefreshLabel();
+        autoRefreshTimer = setTimeout(() => {
+            location.reload();
+        }, 60000);
+    }
+
+    function updateRefreshLabel() {
+        const el = document.getElementById('lastRefresh');
+        if (el) el.textContent = 'Обновено: ' + new Date().toLocaleTimeString('bg-BG');
+    }
+
+    function refreshPage() {
+        clearTimeout(autoRefreshTimer);
+        location.reload();
+    }
+
+    // Филтриране по търсене и статус
+    function filterMachines() {
+        const search = document.getElementById('searchInput')?.value?.toLowerCase() ?? '';
+        const onlyActive = document.getElementById('showOnlyActive')?.checked ?? false;
+        const cards = document.querySelectorAll('.machine-card-wrapper');
+        let visible = 0;
+
+        cards.forEach(card => {
+            const name = card.dataset.machine ?? '';
+            const isActive = card.dataset.active === 'true';
+            const matchSearch = name.includes(search);
+            const matchActive = !onlyActive || isActive;
+
+            if (matchSearch && matchActive) {
+                card.style.display = '';
+                visible++;
+            } else {
+                card.style.display = 'none';
+            }
+        });
+
+        const noResults = document.getElementById('noResults');
+        if (noResults) noResults.style.display = visible === 0 ? '' : 'none';
+    }
+
+    // Премахване на машина
+    let machineToRemove = null;
+
+    function removeMachine(machineName) {
+        machineToRemove = machineName;
+        document.getElementById('confirmMachineName').textContent = machineName;
+        const modal = new bootstrap.Modal(document.getElementById('confirmRemoveModal'));
+        modal.show();
+    }
+
+    document.getElementById('confirmRemoveBtn')?.addEventListener('click', async function () {
+        if (!machineToRemove) return;
+
+        const btn = this;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Премахване...';
+
+        try {
+            const response = await fetch(`/api/activity/machine/${encodeURIComponent(machineToRemove)}`, {
+                method: 'DELETE'
+            });
+
+            const modal = bootstrap.Modal.getInstance(document.getElementById('confirmRemoveModal'));
+            modal?.hide();
+
+            if (response.ok) {
+                if (window.toast) {
+                    window.toast.success(`Машина '${machineToRemove}' е премахната успешно`);
+                }
+                // Премахваме картата без reload
+                const card = document.querySelector(`.machine-card-wrapper[data-machine="${machineToRemove.toLowerCase()}"]`);
+                if (card) {
+                    card.style.transition = 'opacity 0.4s, transform 0.4s';
+                    card.style.opacity = '0';
+                    card.style.transform = 'scale(0.85)';
+                    setTimeout(() => {
+                        card.remove();
+                        updateCounters();
+                        filterMachines();
+                    }, 400);
+                }
+            } else {
+                const data = await response.json().catch(() => ({}));
+                if (window.toast) {
+                    window.toast.error(data.message ?? 'Грешка при премахване');
+                } else {
+                    alert(data.message ?? 'Грешка при премахване');
+                }
+            }
+        } catch (err) {
+            console.error('Грешка:', err);
+            if (window.toast) window.toast.error('Мрежова грешка при премахване');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-trash"></i> Премахни';
+            machineToRemove = null;
+        }
+    });
+
+    function updateCounters() {
+        const all = document.querySelectorAll('.machine-card-wrapper').length;
+        const active = document.querySelectorAll('.machine-card-wrapper[data-active="true"]').length;
+        // Обновяваме статистиките
+        const stats = document.querySelectorAll('.glass-card h2');
+        if (stats[0]) stats[0].textContent = all;
+        if (stats[1]) stats[1].textContent = active;
+        if (stats[2]) stats[2].textContent = all - active;
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        startAutoRefresh();
+    });
+</script>
