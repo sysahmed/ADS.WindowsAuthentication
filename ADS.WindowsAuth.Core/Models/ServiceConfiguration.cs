@@ -69,5 +69,15 @@ public class ServiceConfiguration
     /// Максимален брой опити
     /// </summary>
     public int MaxRetries { get; set; } = 3;
+
+    /// <summary>
+    /// Дали да се правят скрийншотове на екрана на потребителя
+    /// </summary>
+    public bool ScreenshotEnabled { get; set; } = false;
+
+    /// <summary>
+    /// Интервал между скрийншотове (в минути)
+    /// </summary>
+    public int ScreenshotIntervalMinutes { get; set; } = 5;
 }
 

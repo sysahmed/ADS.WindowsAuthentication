@@ -94,4 +94,22 @@ public class MockDatabaseService : IDatabaseService
         _logger.LogInfo("Mock: GetActiveAuthSessionsAsync - връщам празен списък (няма база данни)");
         return await Task.FromResult(new List<AuthSessionEntity>());
     }
+
+    public Task<List<PolicyEntity>> GetAllPoliciesAsync() =>
+        Task.FromResult(new List<PolicyEntity>());
+
+    public Task<int> SavePolicyAsync(PolicyEntity entity) =>
+        Task.FromResult(1);
+
+    public Task UpdatePolicyAsync(PolicyEntity entity) =>
+        Task.CompletedTask;
+
+    public Task DeletePolicyAsync(int id) =>
+        Task.CompletedTask;
+
+    public Task<int> SaveEmailActivityAsync(EmailActivityEntity entity) =>
+        Task.FromResult(1);
+
+    public Task<int> SaveVisitedWebsiteAsync(VisitedWebsiteEntity entity) =>
+        Task.FromResult(1);
 }

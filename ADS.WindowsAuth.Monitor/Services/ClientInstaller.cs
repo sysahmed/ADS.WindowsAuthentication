@@ -11,6 +11,9 @@ public class ClientInstaller
 {
     private readonly ILoggerService _logger;
     private readonly string _applicationDirectory;
+    /// <summary>Последен път когато логнахме "Клиент не е намерен" – за да не запълваме логовете на всеки 5 мин.</summary>
+    private DateTime? _lastSourceNotFoundLoggedUtc;
+    private static readonly TimeSpan SourceNotFoundLogInterval = TimeSpan.FromHours(24);
 
     public ClientInstaller(ILoggerService logger, string applicationDirectory)
     {
@@ -31,6 +34,7 @@ public class ClientInstaller
             // Проверка дали е вече инсталиран
             if (File.Exists(TARGET_EXE))
             {
+                _lastSourceNotFoundLoggedUtc = null; // успех – нулираме за следващи опити
                 var targetFileInfo = new FileInfo(TARGET_EXE);
                 var sourceExePath = FindSourceClient();
 
@@ -47,11 +51,22 @@ public class ClientInstaller
 
                 return true;
             }
-            else
+
+            // Клиентът не е инсталиран – проверяваме дали изобщо има source
+            var sourcePath = FindSourceClient();
+            if (string.IsNullOrEmpty(sourcePath))
             {
+                if (_lastSourceNotFoundLoggedUtc.HasValue && DateTime.UtcNow - _lastSourceNotFoundLoggedUtc.Value < SourceNotFoundLogInterval)
+                    return false; // без повторно логване
+                _lastSourceNotFoundLoggedUtc = DateTime.UtcNow;
                 _logger.LogInfo("Клиент не е инсталиран. Инсталиране...");
-                return InstallClient();
+                _logger.LogWarning("Клиент не е намерен. Пропускане на инсталация. (Следващо съобщение след 24 ч.)");
+                return false;
             }
+
+            _lastSourceNotFoundLoggedUtc = null;
+            _logger.LogInfo("Клиент не е инсталиран. Инсталиране...");
+            return InstallClient();
         }
         catch (Exception ex)
         {
@@ -188,6 +203,16 @@ public class ClientInstaller
                 _logger.LogWarning($"Не може да се създаде shortcut: {ex.Message}");
             }
 
+            // Стъпка 4: Автозареждане при login – за да работи InputCapture (клавиши/кликове) в потребителска сесия
+            try
+            {
+                CreateStartupShortcut(TARGET_EXE);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Не може да се добави в автозареждане: {ex.Message}");
+            }
+
             _logger.LogInfo("Клиент е инсталиран успешно!");
             return true;
         }
@@ -195,6 +220,53 @@ public class ClientInstaller
         {
             _logger.LogError($"Грешка при инсталация на клиент: {ex.Message}", ex);
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Осигурява shortcut за автозареждане (All Users Startup). Ако липсва – създава го.
+    /// </summary>
+    private void EnsureStartupShortcut(string exePath)
+    {
+        string startupFolder = Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup);
+        string shortcutPath = Path.Combine(startupFolder, "ADS Windows Auth Client.lnk");
+        if (!Directory.Exists(startupFolder) || !File.Exists(exePath)) return;
+        if (File.Exists(shortcutPath)) return; // вече има shortcut
+        CreateStartupShortcut(exePath);
+    }
+
+    /// <summary>
+    /// Създава shortcut в All Users Startup – Client ще стартира при login за всички потребители.
+    /// </summary>
+    private void CreateStartupShortcut(string exePath)
+    {
+        try
+        {
+            string startupFolder = Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup);
+            string shortcutPath = Path.Combine(startupFolder, "ADS Windows Auth Client.lnk");
+
+            string vbsScript = $@"
+Set oWS = WScript.CreateObject(""WScript.Shell"")
+sLinkFile = ""{shortcutPath}""
+Set oLink = oWS.CreateShortcut(sLinkFile)
+oLink.TargetPath = ""{exePath}""
+oLink.WorkingDirectory = ""{Path.GetDirectoryName(exePath)}""
+oLink.Description = ""ADS Windows Authentication Client""
+oLink.WindowStyle = 7
+oLink.Save
+";
+            string tempVbs = Path.GetTempFileName() + ".vbs";
+            File.WriteAllText(tempVbs, vbsScript);
+            using (var proc = Process.Start("cscript.exe", $"//Nologo \"{tempVbs}\""))
+            {
+                proc?.WaitForExit(5000);
+            }
+            try { File.Delete(tempVbs); } catch { }
+            _logger.LogInfo("Shortcut за автозареждане създаден (All Users Startup) – InputCapture ще работи при login.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning($"Грешка при създаване на shortcut за автозареждане: {ex.Message}");
         }
     }
 

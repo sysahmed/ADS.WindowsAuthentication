@@ -21,8 +21,9 @@ public interface IConnectionService
     bool IsOfflineMode();
 
     /// <summary>
-    /// Синхронизира offline данни със сървъра
+    /// Синхронизира offline данни със сървъра.
+    /// Ако се подаде httpClient, изпраща буферираните събития при налична връзка.
     /// </summary>
-    Task<bool> SyncOfflineDataAsync();
+    Task<bool> SyncOfflineDataAsync(System.Net.Http.HttpClient? httpClient = null);
 }
 

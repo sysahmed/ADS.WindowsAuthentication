@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ADS.WindowsAuth.Core.Models;
 using ADS.WindowsAuth.Core.Services;
@@ -6,8 +7,9 @@ using ADS.WindowsAuth.Core.Data.Entities;
 namespace ADS.WindowsAuth.API.Controllers;
 
 /// <summary>
-/// Контролер за мониторинг на активност
+/// Контролер за мониторинг на активност. Monitor услугата вика endpoints без логин – AllowAnonymous.
 /// </summary>
+[AllowAnonymous]
 [ApiController]
 [Route("api/activity")]
 public class ActivityController : ControllerBase
@@ -250,6 +252,57 @@ public class ActivityController : ControllerBase
         {
             _logger.LogError($"API: Грешка при обновяване на screen time", ex);
             return StatusCode(500, new { message = "Грешка при обновяване" });
+        }
+    }
+
+    /// <summary>
+    /// Регистрация на посещение на уебсайт (Monitor или browser extension).
+    /// Използва се за отчети на продуктивност – какви сайтове е отварял потребителят.
+    /// </summary>
+    [HttpPost("website")]
+    public async Task<IActionResult> RegisterWebsiteVisit([FromBody] WebsiteVisitRequest request)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.Url))
+        {
+            return BadRequest(new { message = "Url е задължителен" });
+        }
+        try
+        {
+            _activityMonitor.RegisterWebsiteVisit(
+                request.Username ?? "",
+                request.MachineName ?? "",
+                request.Url.Trim(),
+                request.Title?.Trim() ?? "",
+                request.Browser?.Trim() ?? "Unknown",
+                request.DurationSeconds);
+
+            if (_databaseService != null)
+            {
+                try
+                {
+                    var entity = new VisitedWebsiteEntity
+                    {
+                        Username = request.Username ?? "",
+                        MachineName = request.MachineName ?? "",
+                        Url = request.Url.Trim().Length > 2000 ? request.Url.Trim().Substring(0, 2000) : request.Url.Trim(),
+                        Title = string.IsNullOrWhiteSpace(request.Title) ? null : (request.Title.Trim().Length > 500 ? request.Title.Trim().Substring(0, 500) : request.Title.Trim()),
+                        Browser = (request.Browser?.Trim() ?? "Unknown").Length > 100 ? "Unknown" : (request.Browser?.Trim() ?? "Unknown"),
+                        VisitedAt = request.VisitedAt ?? DateTime.UtcNow,
+                        DurationSeconds = request.DurationSeconds
+                    };
+                    await _databaseService.SaveVisitedWebsiteAsync(entity);
+                }
+                catch (Exception dbEx)
+                {
+                    _logger.LogError($"Грешка при запис на VisitedWebsite в БД: {dbEx.Message}", dbEx);
+                }
+            }
+            return Ok(new { message = "Посещението е записано" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"API: Грешка при запис на website visit", ex);
+            return StatusCode(500, new { message = "Грешка при запис" });
         }
     }
 
@@ -575,6 +628,180 @@ public class ActivityController : ControllerBase
             return StatusCode(500, new { message = "Грешка при регистрация на login" });
         }
     }
+
+    /// <summary>
+    /// Регистрация на отваряне на файл от конкретно приложение (напр. Excel отвори Invoice.xlsx).
+    /// Изпраща се от Monitor когато засече Office/друго приложение с файлов аргумент.
+    /// </summary>
+    [HttpPost("file-open")]
+    public async Task<IActionResult> RegisterFileOpen([FromBody] FileOpenRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.FilePath) || string.IsNullOrWhiteSpace(request.ApplicationName))
+            return BadRequest(new { message = "FilePath и ApplicationName са задължителни." });
+
+        try
+        {
+            _activityMonitor.RegisterFileOpen(request.Username, request.MachineName, request.FilePath, request.ApplicationName);
+
+            if (_databaseService != null)
+            {
+                try
+                {
+                    var entity = new FileActivityEntity
+                    {
+                        Username = request.Username,
+                        Domain = request.Domain ?? "",
+                        MachineName = request.MachineName,
+                        FilePath = request.FilePath,
+                        FileName = request.FileName ?? Path.GetFileName(request.FilePath),
+                        FileExtension = Path.GetExtension(request.FilePath),
+                        FileSize = request.FileSize,
+                        ApplicationName = request.ApplicationName,
+                        EventType = request.EventType ?? "Open",
+                        EventTime = request.Timestamp ?? DateTime.UtcNow
+                    };
+                    await _databaseService.SaveFileActivityAsync(entity);
+                }
+                catch (Exception dbEx)
+                {
+                    _logger.LogError($"Грешка при запис на FileOpen в БД: {dbEx.Message}", dbEx);
+                }
+            }
+
+            _logger.LogInfo($"API: {request.ApplicationName} отвори '{request.FileName ?? Path.GetFileName(request.FilePath)}' от {request.Username}@{request.MachineName}");
+            return Ok(new { message = "File open event регистриран" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"API: Грешка при регистрация на file open event", ex);
+            return StatusCode(500, new { message = "Грешка при регистрация" });
+        }
+    }
+
+    /// <summary>
+    /// Приема скрийншот от Monitor и го записва на диска на сървъра.
+    /// Файловете се съхраняват в wwwroot/screenshots/{MachineName}/{YYYY-MM-DD}/HH-mm-ss_username.jpg
+    /// </summary>
+    [HttpPost("screenshot")]
+    public IActionResult SaveScreenshot([FromBody] ScreenshotRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.ImageBase64) || string.IsNullOrWhiteSpace(request.MachineName))
+            return BadRequest(new { message = "ImageBase64 и MachineName са задължителни." });
+
+        try
+        {
+            byte[] imageBytes = Convert.FromBase64String(request.ImageBase64);
+            var ts = request.Timestamp ?? DateTime.Now;
+            string dateFolder = ts.ToString("yyyy-MM-dd");
+            string fileName = $"{ts:HH-mm-ss}_{request.Username}.jpg";
+
+            // wwwroot/screenshots/{MachineName}/{date}/
+            var webRootPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "screenshots",
+                request.MachineName, dateFolder);
+            Directory.CreateDirectory(webRootPath);
+
+            string filePath = Path.Combine(webRootPath, fileName);
+            System.IO.File.WriteAllBytes(filePath, imageBytes);
+
+            string urlPath = $"/screenshots/{request.MachineName}/{dateFolder}/{fileName}";
+            _logger.LogInfo($"Screenshot записан: {urlPath} ({imageBytes.Length / 1024} KB) – {request.Username}@{request.MachineName}");
+
+            return Ok(new { saved = true, path = urlPath });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"API: Грешка при запис на screenshot", ex);
+            return StatusCode(500, new { message = "Грешка при запис на screenshot" });
+        }
+    }
+
+    /// <summary>
+    /// Регистрация на активно използване на приложение (колко секунди прозорецът е бил на фокус).
+    /// Изпраща се от Monitor на всеки ~5 минути за всяко приложение.
+    /// </summary>
+    [HttpPost("application/active-time")]
+    public async Task<IActionResult> RegisterApplicationActiveTime([FromBody] ApplicationActiveTimeRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.ApplicationName) || request.ActiveSeconds <= 0)
+            return BadRequest(new { message = "ApplicationName е задължителен и ActiveSeconds трябва да е > 0." });
+
+        try
+        {
+            if (_databaseService != null)
+            {
+                try
+                {
+                    var entity = new ApplicationEventEntity
+                    {
+                        Username = request.Username,
+                        Domain = request.Domain ?? "",
+                        MachineName = request.MachineName,
+                        ApplicationName = request.ApplicationName,
+                        EventType = "ActiveTime",
+                        DurationSeconds = request.ActiveSeconds,
+                        EventTime = request.Timestamp ?? DateTime.UtcNow
+                    };
+                    await _databaseService.SaveApplicationEventAsync(entity);
+                }
+                catch (Exception dbEx)
+                {
+                    _logger.LogError($"Грешка при запис на ApplicationActiveTime в БД: {dbEx.Message}", dbEx);
+                }
+            }
+
+            _logger.LogInfo($"API: ActiveTime {request.ApplicationName} = {request.ActiveSeconds}s – {request.Username}@{request.MachineName}");
+            return Ok(new { message = "Active time регистриран" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"API: Грешка при регистрация на active time", ex);
+            return StatusCode(500, new { message = "Грешка при регистрация" });
+        }
+    }
+
+    /// <summary>
+    /// Регистрация на имейл събитие (получен/изпратен/отговорен от Outlook).
+    /// </summary>
+    [HttpPost("email")]
+    public async Task<IActionResult> RegisterEmailActivity([FromBody] EmailActivityRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Subject))
+            return BadRequest(new { message = "Subject е задължителен." });
+
+        try
+        {
+            if (_databaseService != null)
+            {
+                try
+                {
+                    var entity = new EmailActivityEntity
+                    {
+                        Username = request.Username,
+                        Domain = request.Domain ?? "",
+                        MachineName = request.MachineName,
+                        Subject = request.Subject,
+                        SenderOrRecipient = request.SenderOrRecipient,
+                        EventType = request.EventType ?? "Opened",
+                        DetectionSource = request.DetectionSource ?? "WindowTitle",
+                        EventTime = request.Timestamp ?? DateTime.UtcNow
+                    };
+                    await _databaseService.SaveEmailActivityAsync(entity);
+                }
+                catch (Exception dbEx)
+                {
+                    _logger.LogError($"Грешка при запис на EmailActivity в БД: {dbEx.Message}", dbEx);
+                }
+            }
+
+            _logger.LogInfo($"API: Email [{request.EventType}] '{request.Subject}' от/до {request.SenderOrRecipient ?? "?"} – {request.Username}@{request.MachineName}");
+            return Ok(new { message = "Email event регистриран" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"API: Грешка при регистрация на email event", ex);
+            return StatusCode(500, new { message = "Грешка при регистрация" });
+        }
+    }
 }
 
 // Request модели
@@ -615,6 +842,17 @@ public class ScreenTimeUpdateRequest
     public string Username { get; set; } = string.Empty;
     public string MachineName { get; set; } = string.Empty;
     public int Seconds { get; set; }
+}
+
+public class WebsiteVisitRequest
+{
+    public string? Username { get; set; }
+    public string? MachineName { get; set; }
+    public string Url { get; set; } = string.Empty;
+    public string? Title { get; set; }
+    public string? Browser { get; set; }
+    public DateTime? VisitedAt { get; set; }
+    public int DurationSeconds { get; set; }
 }
 
 public class NetworkActivityRequest
@@ -672,5 +910,51 @@ public class UserLoginRequest
     public string? SessionId { get; set; }
     public string? IpAddress { get; set; }
     public int? LogonType { get; set; }
+}
+
+public class FileOpenRequest
+{
+    public string Username { get; set; } = string.Empty;
+    public string? Domain { get; set; }
+    public string MachineName { get; set; } = string.Empty;
+    public string FilePath { get; set; } = string.Empty;
+    public string? FileName { get; set; }
+    public string ApplicationName { get; set; } = string.Empty;
+    public long? FileSize { get; set; }
+    public string? EventType { get; set; } // "Open" | "Modify" | "Create"
+    public DateTime? Timestamp { get; set; }
+}
+
+public class EmailActivityRequest
+{
+    public string Username { get; set; } = string.Empty;
+    public string? Domain { get; set; }
+    public string MachineName { get; set; } = string.Empty;
+    public string Subject { get; set; } = string.Empty;
+    public string? SenderOrRecipient { get; set; }
+    public string? EventType { get; set; } // "Received" | "Replied" | "Composed" | "Forwarded" | "Opened"
+    public string? DetectionSource { get; set; } // "WindowTitle" | "FolderScan"
+    public DateTime? Timestamp { get; set; }
+}
+
+public class ScreenshotRequest
+{
+    public string Username { get; set; } = string.Empty;
+    public string? Domain { get; set; }
+    public string MachineName { get; set; } = string.Empty;
+    public string ImageBase64 { get; set; } = string.Empty;
+    public int Width { get; set; }
+    public int Height { get; set; }
+    public DateTime? Timestamp { get; set; }
+}
+
+public class ApplicationActiveTimeRequest
+{
+    public string Username { get; set; } = string.Empty;
+    public string? Domain { get; set; }
+    public string MachineName { get; set; } = string.Empty;
+    public string ApplicationName { get; set; } = string.Empty;
+    public int ActiveSeconds { get; set; }
+    public DateTime? Timestamp { get; set; }
 }
 

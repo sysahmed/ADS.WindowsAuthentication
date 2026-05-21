@@ -80,13 +80,14 @@ public class RemoteDesktopSessionService : IRemoteDesktopSessionService
     }
 
     /// <inheritdoc/>
-    public Task RegisterHostAsync(string sessionId, string connectionId)
+    public Task RegisterHostAsync(string sessionId, string connectionId, bool autoApprove = false)
     {
         if (_sessions.TryGetValue(sessionId, out var session))
         {
             session.HostConnectionId = connectionId;
+            session.AutoApprove = autoApprove;
             session.LastActivity = DateTime.Now;
-            _logger.LogInfo($"Host регистриран за сесия {sessionId}: {connectionId}");
+            _logger.LogInfo($"Host регистриран за сесия {sessionId}: {connectionId}, AutoApprove={autoApprove}");
         }
         else
         {
@@ -94,6 +95,19 @@ public class RemoteDesktopSessionService : IRemoteDesktopSessionService
         }
 
         return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public async Task<(string sessionId, bool created)> CreateOrGetSessionAsync(string machineName, string? requestedBy = null)
+    {
+        var existing = await GetSessionByMachineAsync(machineName);
+        if (existing != null)
+        {
+            existing.LastActivity = DateTime.Now;
+            return (existing.SessionId, false);
+        }
+        var sessionId = await CreateSessionAsync(machineName, requestedBy);
+        return (sessionId, true);
     }
 
     /// <inheritdoc/>
@@ -153,6 +167,30 @@ public class RemoteDesktopSessionService : IRemoteDesktopSessionService
             session.LastActivity = DateTime.Now;
         }
 
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task ClearHostConnectionAsync(string sessionId)
+    {
+        if (_sessions.TryGetValue(sessionId, out var session))
+        {
+            session.HostConnectionId = null;
+            session.ControlEnabled = false;
+            _logger.LogInfo($"Host connection изчистен за сесия {sessionId}");
+        }
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task ClearViewerConnectionAsync(string sessionId)
+    {
+        if (_sessions.TryGetValue(sessionId, out var session))
+        {
+            session.ViewerConnectionId = null;
+            session.ControlEnabled = false;
+            _logger.LogInfo($"Viewer connection изчистен за сесия {sessionId}");
+        }
         return Task.CompletedTask;
     }
 

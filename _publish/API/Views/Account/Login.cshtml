@@ -1,0 +1,192 @@
+@model LoginViewModel
+@{
+    ViewData["Title"] = "Вход в системата";
+    Layout = "_Layout";
+}
+
+<div class="container mt-5 mb-5 login-page">
+    <div class="row justify-content-center">
+        <div class="col-11 col-sm-10 col-md-6 col-lg-5">
+            <div class="glass-card login-card text-center p-4">
+                <div style="font-size: 3rem; margin-bottom: 0.5rem;">🔐</div>
+                <h2 class="mb-1" style="color: #1e293b;">ADS Windows Auth</h2>
+                <p class="mb-4 login-subtitle" style="color: #64748b;">Вход в системата за управление</p>
+
+                @if (TempData["Error"] != null)
+                {
+                    <div class="alert alert-danger">@TempData["Error"]</div>
+                }
+                @if (TempData["Success"] != null)
+                {
+                    <div class="alert alert-success">@TempData["Success"]</div>
+                }
+
+                <!-- Tab навигация -->
+                <ul class="nav nav-pills nav-fill mb-4" id="loginTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="password-tab" data-bs-toggle="pill"
+                                data-bs-target="#passwordPane" type="button" role="tab">
+                            🔑 Парола
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="biometric-tab" data-bs-toggle="pill"
+                                data-bs-target="#biometricPane" type="button" role="tab">
+                            🔏 Биометрия
+                        </button>
+                    </li>
+                </ul>
+
+                <div class="tab-content">
+                    <!-- Вход с парола -->
+                    <div class="tab-pane fade show active text-start" id="passwordPane" role="tabpanel">
+                        <form asp-action="Login" asp-controller="Account" method="post">
+                            <input type="hidden" name="returnUrl" value="@ViewData["ReturnUrl"]" />
+                            @Html.AntiForgeryToken()
+
+                            <div class="mb-3">
+                                <label asp-for="Username" class="form-label">Потребителско име</label>
+                                <input asp-for="Username" class="form-control" placeholder="admin"
+                                       autocomplete="username" autofocus />
+                                <span asp-validation-for="Username" class="text-danger small"></span>
+                            </div>
+
+                            <div class="mb-3">
+                                <label asp-for="Password" class="form-label">Парола</label>
+                                <div class="input-group">
+                                    <input asp-for="Password" type="password" class="form-control"
+                                           placeholder="••••••••" autocomplete="current-password" id="passwordField" />
+                                    <button class="btn btn-outline-secondary" type="button"
+                                            onclick="togglePassword()">👁</button>
+                                </div>
+                                <span asp-validation-for="Password" class="text-danger small"></span>
+                            </div>
+
+                            <div class="mb-3 d-flex justify-content-between align-items-center">
+                                <div class="form-check">
+                                    <input asp-for="RememberMe" class="form-check-input" type="checkbox" />
+                                    <label asp-for="RememberMe" class="form-check-label small">Запомни ме</label>
+                                </div>
+                            </div>
+
+                            <div asp-validation-summary="All" class="alert alert-danger" style="display:@(ViewData.ModelState.IsValid ? "none" : "block")"></div>
+
+                            <button type="submit" class="btn btn-primary btn-lg w-100">
+                                🔓 Влез
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Вход с биометрия (FIDO2) -->
+                    <div class="tab-pane fade text-start" id="biometricPane" role="tabpanel">
+                        <div id="bioError" class="alert alert-danger d-none" role="alert"></div>
+                        <div id="bioSuccess" class="alert alert-success d-none" role="alert"></div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Потребителско име</label>
+                            <input type="text" class="form-control" id="bioUsername"
+                                   placeholder="domain\username"
+                                   autocomplete="username webauthn" />
+                        </div>
+
+                        <button class="btn btn-primary btn-lg w-100 mb-3" id="btnBioLogin" onclick="startBioLogin()">
+                            <span id="bioLoginContent">🔏 Вход с Биометрия</span>
+                        </button>
+
+                        <div class="mt-2 p-3 rounded" style="background:rgba(255,255,255,0.05); font-size:0.82em;">
+                            <strong>🛡️</strong> Паролата <em>никога</em> не се изпраща.
+                            Биометричните данни остават на устройството ви.
+                        </div>
+                    </div>
+                </div>
+
+                <hr class="my-3" />
+                <div class="text-center">
+                    <a href="/WebAuthn/Register" class="btn btn-link btn-sm text-muted">
+                        <i class="bi bi-plus-circle"></i> Регистрирай биометрично устройство
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+function togglePassword() {
+    const f = document.getElementById('passwordField');
+    f.type = f.type === 'password' ? 'text' : 'password';
+}
+
+async function startBioLogin() {
+    const username = document.getElementById('bioUsername').value.trim();
+    const btn = document.getElementById('btnBioLogin');
+    const content = document.getElementById('bioLoginContent');
+    showBioError(''); showBioSuccess('');
+
+    if (!username) { showBioError('Моля, въведете потребителско име'); return; }
+
+    try {
+        btn.disabled = true;
+        content.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Изчакване на биометрия...';
+
+        const beginResp = await fetch('/api/account/webauthn/begin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username })
+        });
+        if (!beginResp.ok) { const e = await beginResp.json(); throw new Error(e.error || 'Грешка при инициализация'); }
+        const opts = await beginResp.json();
+
+        const credOpts = {
+            publicKey: {
+                challenge: b64ToBuffer(opts.challenge),
+                rpId: opts.rpId,
+                allowCredentials: (opts.allowCredentials || []).map(c => ({ type: c.type, id: b64ToBuffer(c.id) })),
+                userVerification: opts.userVerification,
+                timeout: opts.timeout
+            }
+        };
+        const assertion = await navigator.credentials.get(credOpts);
+
+        const completeResp = await fetch('/api/account/webauthn/complete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                challengeKey: opts.challengeKey,
+                credentialId: bufToB64(assertion.rawId),
+                authenticatorData: bufToB64(assertion.response.authenticatorData),
+                clientDataJson: bufToB64(assertion.response.clientDataJSON),
+                signature: bufToB64(assertion.response.signature)
+            })
+        });
+
+        if (!completeResp.ok) { const e = await completeResp.json(); throw new Error(e.error || 'Аутентикацията неуспешна'); }
+        const result = await completeResp.json();
+        showBioSuccess('✅ Влязохте успешно!');
+        setTimeout(() => { window.location.href = result.redirectUrl || '/'; }, 800);
+    } catch (err) {
+        if (err.name === 'NotAllowedError') showBioError('Биометричната верификация беше отказана или отменена.');
+        else if (err.name === 'NotSupportedError') showBioError('Устройството не поддържа WebAuthn/FIDO2.');
+        else showBioError(`Грешка: ${err.message}`);
+        btn.disabled = false;
+        content.innerHTML = '🔏 Вход с Биометрия';
+    }
+}
+
+function showBioError(m) { const el = document.getElementById('bioError'); el.textContent = m; el.classList.toggle('d-none', !m); }
+function showBioSuccess(m) { const el = document.getElementById('bioSuccess'); el.textContent = m; el.classList.toggle('d-none', !m); }
+
+function b64ToBuffer(b64url) {
+    const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+    const bin = atob(b64); const buf = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+    return buf.buffer;
+}
+function bufToB64(buf) {
+    const bytes = new Uint8Array(buf); let s = '';
+    for (const b of bytes) s += String.fromCharCode(b);
+    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+</script>
+}

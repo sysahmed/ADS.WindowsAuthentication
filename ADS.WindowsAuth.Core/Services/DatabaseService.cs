@@ -644,6 +644,36 @@ public class DatabaseService : IDatabaseService
         }
     }
 
+    public async Task<int> SaveEmailActivityAsync(EmailActivityEntity entity)
+    {
+        try
+        {
+            _context.EmailActivities.Add(entity);
+            await _context.SaveChangesAsync();
+            return entity.Id;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Грешка при запис на Email Activity", ex);
+            throw;
+        }
+    }
+
+    public async Task<int> SaveVisitedWebsiteAsync(VisitedWebsiteEntity entity)
+    {
+        try
+        {
+            _context.VisitedWebsites.Add(entity);
+            await _context.SaveChangesAsync();
+            return entity.Id;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Грешка при запис на VisitedWebsite", ex);
+            throw;
+        }
+    }
+
     public async Task<List<AuthSessionEntity>> GetActiveAuthSessionsAsync()
     {
         try
@@ -661,6 +691,83 @@ public class DatabaseService : IDatabaseService
         {
             _logger.LogError($"Грешка при получаване на активни сесии от базата данни: {ex.Message}", ex);
             return new List<AuthSessionEntity>();
+        }
+    }
+
+    public async Task<List<PolicyEntity>> GetAllPoliciesAsync()
+    {
+        try
+        {
+            return await _context.Policies.OrderBy(p => p.Name).ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Грешка при получаване на политики: {ex.Message}", ex);
+            return new List<PolicyEntity>();
+        }
+    }
+
+    public async Task<int> SavePolicyAsync(PolicyEntity entity)
+    {
+        try
+        {
+            _context.Policies.Add(entity);
+            await _context.SaveChangesAsync();
+            return entity.Id;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Грешка при запис на политика: {ex.Message}", ex);
+            throw;
+        }
+    }
+
+    public async Task UpdatePolicyAsync(PolicyEntity entity)
+    {
+        try
+        {
+            var existing = await _context.Policies.FindAsync(entity.Id);
+            if (existing != null)
+            {
+                existing.Name = entity.Name;
+                existing.Description = entity.Description;
+                existing.IsActive = entity.IsActive;
+                existing.BlockedWebsitesJson = entity.BlockedWebsitesJson;
+                existing.BlockedApplicationsJson = entity.BlockedApplicationsJson;
+                existing.BlockedFileExtensionsJson = entity.BlockedFileExtensionsJson;
+                existing.TargetMachinesJson = entity.TargetMachinesJson;
+                existing.TargetUsersJson = entity.TargetUsersJson;
+                existing.MaxScreenTimeSeconds = entity.MaxScreenTimeSeconds;
+                existing.AllowedInstallationsJson = entity.AllowedInstallationsJson;
+                existing.BlockedInstallationsJson = entity.BlockedInstallationsJson;
+                existing.BlockUsbAccess = entity.BlockUsbAccess;
+                existing.BlockPrinterAccess = entity.BlockPrinterAccess;
+                existing.UpdatedAt = DateTime.Now;
+                await _context.SaveChangesAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Грешка при обновяване на политика: {ex.Message}", ex);
+            throw;
+        }
+    }
+
+    public async Task DeletePolicyAsync(int id)
+    {
+        try
+        {
+            var entity = await _context.Policies.FindAsync(id);
+            if (entity != null)
+            {
+                _context.Policies.Remove(entity);
+                await _context.SaveChangesAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Грешка при изтриване на политика {id}: {ex.Message}", ex);
+            throw;
         }
     }
 }

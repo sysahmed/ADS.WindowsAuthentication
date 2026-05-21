@@ -1,0 +1,2129 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>ADS.WindowsAuth.Core</name>
+    </assembly>
+    <members>
+        <member name="T:ADS.WindowsAuth.Core.Configuration.RequiredIfAttribute">
+            <summary>
+            Conditional required validation attribute
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Configuration.SecureConfigurationProvider">
+            <summary>
+            Provides secure configuration from environment variables and other secure sources
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Configuration.SecureConfigurationProvider.GetSecureSettings(Microsoft.Extensions.Configuration.IConfiguration,System.Nullable{System.Boolean})">
+            <summary>
+            Binds secure settings from various sources with fallback
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Configuration.SecureConfigurationProvider.ValidateSecureSettings(ADS.WindowsAuth.Core.Configuration.SecureSettings,Microsoft.Extensions.Configuration.IConfiguration,System.Boolean)">
+            <summary>
+            Validates that critical secure settings are available
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Configuration.SecureConfigurationProvider.AddSecureConfiguration(Microsoft.Extensions.Configuration.IConfigurationBuilder)">
+            <summary>
+            Creates a secure configuration builder
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Configuration.SecureSettings">
+            <summary>
+            Secure configuration settings that should not be stored in appsettings.json
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Configuration.SecureSettings.ActiveDirectoryServicePassword">
+            <summary>
+            Active Directory service account password
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Configuration.SecureSettings.JwtKey">
+            <summary>
+            JWT signing key
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Configuration.SecureSettings.DatabaseConnectionString">
+            <summary>
+            Database connection string (if different from appsettings)
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Configuration.ActiveDirectorySettings">
+            <summary>
+            Active Directory configuration with validation
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Configuration.ActiveDirectorySettings.IsValid">
+            <summary>
+            Validates the configuration
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Configuration.JwtSettings">
+            <summary>
+            JWT configuration
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Configuration.JwtSettings.IsValid">
+            <summary>
+            Validates the JWT configuration
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.ApplicationDbContext">
+            <summary>
+            DbContext за приложението
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.DesignTimeDbContextFactory">
+            <summary>
+            Factory за създаване на DbContext при design time (миграции)
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.Entities.AdGroupEntity">
+            <summary>
+            Active Directory група
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.Entities.AdUserEntity">
+            <summary>
+            Active Directory потребител
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.Entities.AdUserGroupEntity">
+            <summary>
+            Връзка между AD потребител и група (many-to-many)
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.Entities.ApplicationEventEntity">
+            <summary>
+            Събитие за приложение (стартиране/затваряне)
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.Entities.AuthSessionEntity">
+            <summary>
+            Сесия за аутентикация
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.Entities.BlockedIpEntity">
+            <summary>
+            Блокиран IP адрес след брутфорс атака.
+            Може да бъде деблокиран само от администратор.
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.BlockedIpEntity.IpAddress">
+            <summary>Блокираният IP адрес</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.BlockedIpEntity.FailedAttempts">
+            <summary>Брой неуспешни опити преди блокиране</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.BlockedIpEntity.BlockedAt">
+            <summary>Дата/час на блокиране</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.BlockedIpEntity.LastAttemptAt">
+            <summary>Последен неуспешен опит</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.BlockedIpEntity.UnblockedAt">
+            <summary>Дата/час на деблокиране (null = все още блокиран)</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.BlockedIpEntity.UnblockedBy">
+            <summary>Кой администратор е деблокирал (null = все още блокиран)</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.BlockedIpEntity.UnblockReason">
+            <summary>Причина за деблокиране (опционална бележка от администратора)</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.BlockedIpEntity.IsBlocked">
+            <summary>Дали в момента е блокиран</summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.Entities.EmailActivityEntity">
+            <summary>
+            Имейл събитие (получен, изпратен, отговорен, препратен).
+            Записва се когато Outlook е активен и потребителят отваря/изпраща имейл.
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.EmailActivityEntity.Subject">
+            <summary>Тема на имейла.</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.EmailActivityEntity.SenderOrRecipient">
+            <summary>
+            Подател (за получени) или получател (за изпратени/отговорени).
+            Може да е имейл или дисплейно име.
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.EmailActivityEntity.EventType">
+            <summary>Тип на събитието: Received | Replied | Composed | Forwarded | Opened</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.EmailActivityEntity.DetectionSource">
+            <summary>Откъде е засечено (WindowTitle | FolderScan).</summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.Entities.FileActivityEntity">
+            <summary>
+            Файлова активност (отваряне/затваряне/създаване/изтриване)
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.Entities.InputLogEntity">
+            <summary>
+            Запис за въвеждане от клавиатура или клик – от Monitor (input capture).
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.InputLogEntity.LogType">
+            <summary>Key или Click</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.InputLogEntity.Data">
+            <summary>Въведен символ/текст или "X,Y,Button" за клик</summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.Entities.LogEntryEntity">
+            <summary>
+            Лог запис
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.Entities.LoginEventEntity">
+            <summary>
+            Ентити за съхранение на събития за влизане на потребители
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.LoginEventEntity.Username">
+            <summary>
+            Потребителско име
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.LoginEventEntity.Domain">
+            <summary>
+            Домейн
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.LoginEventEntity.MachineName">
+            <summary>
+            Име на машината
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.LoginEventEntity.LoginTime">
+            <summary>
+            Време на влизане
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.LoginEventEntity.LoginMethod">
+            <summary>
+            Метод на влизане (QRCode, Password, SmartCard)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.LoginEventEntity.SessionId">
+            <summary>
+            ID на QR сесията (ако е приложимо)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.LoginEventEntity.Success">
+            <summary>
+            Дали влизането е успешно
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.LoginEventEntity.IpAddress">
+            <summary>
+            IP адрес (ако е наличен)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.LoginEventEntity.AdUserId">
+            <summary>
+            ID на AD потребител (ако е свързан)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.LoginEventEntity.LogonType">
+            <summary>
+            Windows logon type (2=Interactive, 10=RemoteInteractive, и т.н.)
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.Entities.MonitorConfigurationEntity">
+            <summary>
+            Конфигурация на Monitor Service за конкретна машина
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.MonitorConfigurationEntity.ScreenshotEnabled">
+            <summary>Дали да се правят скрийншотове на екрана (по избор)</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Data.Entities.MonitorConfigurationEntity.ScreenshotIntervalMinutes">
+            <summary>Интервал между скрийншотове в минути</summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.Entities.NetworkActivityEntity">
+            <summary>
+            Мрежова активност
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.Entities.PolicyEntity">
+            <summary>
+            Политика
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.Entities.ScreenTimeEntity">
+            <summary>
+            Screen time запис
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.Entities.SystemInfoEntity">
+            <summary>
+            Системна информация
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.Entities.UsbDeviceEntity">
+            <summary>
+            USB устройство събитие
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.Entities.UserActivityEntity">
+            <summary>
+            Активност на потребител в базата данни
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.Entities.VisitedWebsiteEntity">
+            <summary>
+            Запис за посещение на уебсайт (от Monitor или browser extension).
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.Entities.WindowsEventEntity">
+            <summary>
+            Windows Event Log запис
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Data.Migrations.InitialCreate">
+            <inheritdoc />
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Data.Migrations.InitialCreate.Up(Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Data.Migrations.InitialCreate.Down(Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Data.Migrations.InitialCreate.BuildTargetModel(Microsoft.EntityFrameworkCore.ModelBuilder)">
+            <inheritdoc />
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Models.ActiveDirectorySettings">
+            <summary>
+            Настройки за Active Directory
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ActiveDirectorySettings.Enabled">
+            <summary>
+            Дали AD е активиран
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ActiveDirectorySettings.DomainName">
+            <summary>
+            Име на домейна
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ActiveDirectorySettings.LdapPath">
+            <summary>
+            LDAP път (ако е празен, се генерира автоматично)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ActiveDirectorySettings.ServiceAccount">
+            <summary>
+            Service Account за свързване към AD
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ActiveDirectorySettings.ServicePassword">
+            <summary>
+            Парола на Service Account
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Models.ActiveDirectorySettings.GetLdapPath">
+            <summary>
+            Генерира LDAP път ако не е зададен
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Models.ApplicationInstallation">
+            <summary>
+            Заявка за инсталация на приложение
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ApplicationInstallation.Id">
+            <summary>
+            Идентификатор на инсталацията
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ApplicationInstallation.ApplicationName">
+            <summary>
+            Име на приложението
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ApplicationInstallation.InstallerPath">
+            <summary>
+            Път до инсталационния файл или URL
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ApplicationInstallation.InstallerType">
+            <summary>
+            Тип на инсталатора (MSI, EXE, URL, и т.н.)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ApplicationInstallation.InstallParameters">
+            <summary>
+            Параметри за инсталация
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ApplicationInstallation.TargetMachine">
+            <summary>
+            Целева машина
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ApplicationInstallation.Status">
+            <summary>
+            Статус на инсталацията
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ApplicationInstallation.StatusMessage">
+            <summary>
+            Съобщение за статуса
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ApplicationInstallation.RequestedAt">
+            <summary>
+            Време на заявка
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ApplicationInstallation.CompletedAt">
+            <summary>
+            Време на завършване
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ApplicationInstallation.RequestedBy">
+            <summary>
+            Потребител, който е направил заявката
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Models.InstallationStatus">
+            <summary>
+            Статус на инсталация
+            </summary>
+        </member>
+        <member name="F:ADS.WindowsAuth.Core.Models.InstallationStatus.Pending">
+            <summary>
+            Очаква
+            </summary>
+        </member>
+        <member name="F:ADS.WindowsAuth.Core.Models.InstallationStatus.InProgress">
+            <summary>
+            В процес
+            </summary>
+        </member>
+        <member name="F:ADS.WindowsAuth.Core.Models.InstallationStatus.Completed">
+            <summary>
+            Успешна
+            </summary>
+        </member>
+        <member name="F:ADS.WindowsAuth.Core.Models.InstallationStatus.Failed">
+            <summary>
+            Неуспешна
+            </summary>
+        </member>
+        <member name="F:ADS.WindowsAuth.Core.Models.InstallationStatus.Cancelled">
+            <summary>
+            Отменена
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Models.AuthRequest">
+            <summary>
+            Заявка за аутентикация от мобилно устройство
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthRequest.AccessToken">
+            <summary>
+            Токен за достъп до сесията
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthRequest.Username">
+            <summary>
+            Потребителско име в домейна
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthRequest.Password">
+            <summary>
+            Парола на потребителя
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthRequest.Domain">
+            <summary>
+            Домейн на потребителя
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Models.AuthResponse">
+            <summary>
+            Отговор на заявка за аутентикация
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthResponse.Success">
+            <summary>
+            Дали аутентикацията е успешна
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthResponse.Message">
+            <summary>
+            Съобщение за резултата
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthResponse.MachineName">
+            <summary>
+            Име на компютъра
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthResponse.Username">
+            <summary>
+            Потребителско име
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Models.AuthSession">
+            <summary>
+            Представлява сесия за аутентикация
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthSession.SessionId">
+            <summary>
+            Уникален идентификатор на сесията
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthSession.AccessToken">
+            <summary>
+            Токен за достъп до сесията
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthSession.MachineName">
+            <summary>
+            Име на компютъра/машината
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthSession.WindowsUsername">
+            <summary>
+            Потребителско име на Windows потребителя
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthSession.Domain">
+            <summary>
+            Домейн на потребителя
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthSession.CreatedAt">
+            <summary>
+            Време на създаване на сесията
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthSession.ExpiresAt">
+            <summary>
+            Време на изтичане на сесията
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthSession.Status">
+            <summary>
+            Статус на сесията (Pending, Approved, Rejected, Expired)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthSession.MobileDeviceIp">
+            <summary>
+            IP адрес на мобилното устройство (ако е приложимо)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthSession.ApprovedAt">
+            <summary>
+            Време на одобряване на сесията
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthSession.ApprovedBy">
+            <summary>
+            Потребител който е одобрил сесията (формат: username@domain)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthSession.ApprovedPassword">
+            <summary>
+            Парола на одобрилия потребител (временно запазена за автоматичен login, шифрована)
+            ВАЖНО: Това е временно и трябва да се изтрие след login
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthSession.PasswordExpiresAt">
+            <summary>
+            Време на изтичане на паролата (за security - автоматично изтриване)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthSession.IsPasswordExpired">
+            <summary>
+            Дали паролата е изтекла (за security)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Models.AuthSession.ClearPassword">
+            <summary>
+            Изтрива паролата от паметта (за security)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.AuthSession.Username">
+            <summary>
+            Потребителско име (алиас за WindowsUsername за по-лесен достъп)
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Models.SessionStatus">
+            <summary>
+            Статус на сесията за аутентикация
+            </summary>
+        </member>
+        <member name="F:ADS.WindowsAuth.Core.Models.SessionStatus.Pending">
+            <summary>
+            Очаква потвърждение
+            </summary>
+        </member>
+        <member name="F:ADS.WindowsAuth.Core.Models.SessionStatus.Approved">
+            <summary>
+            Одобрена
+            </summary>
+        </member>
+        <member name="F:ADS.WindowsAuth.Core.Models.SessionStatus.Rejected">
+            <summary>
+            Отхвърлена
+            </summary>
+        </member>
+        <member name="F:ADS.WindowsAuth.Core.Models.SessionStatus.Expired">
+            <summary>
+            Изтекла
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Models.CreateSessionRequest">
+            <summary>
+            Заявка за създаване на сесия с опционални потребител и домейн
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.CreateSessionRequest.Username">
+            <summary>
+            Потребителско име (опционално - ако не е предоставено, използва се текущия потребител от сървъра)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.CreateSessionRequest.Domain">
+            <summary>
+            Домейн (опционално - ако не е предоставен, използва се текущия домейн от сървъра)
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Models.Fido2Credential">
+            <summary>
+            Съхранен FIDO2/WebAuthn credential за потребител
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Fido2Credential.Username">
+            <summary>Потребителско име (domain\\username или username)</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Fido2Credential.CredentialId">
+            <summary>Base64url-encoded credential ID от authenticator-а</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Fido2Credential.PublicKeyCose">
+            <summary>Публичен ключ (COSE формат, Base64)</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Fido2Credential.SignCount">
+            <summary>Sign count за replay protection</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Fido2Credential.UserHandle">
+            <summary>User handle (Base64url)</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Fido2Credential.DeviceDescription">
+            <summary>Устройство/authenticator описание</summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Models.Policy">
+            <summary>
+            Политика за управление на машина
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Policy.Id">
+            <summary>
+            Идентификатор на политиката
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Policy.Name">
+            <summary>
+            Име на политиката
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Policy.Description">
+            <summary>
+            Описание
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Policy.IsActive">
+            <summary>
+            Дали политиката е активна
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Policy.BlockedWebsites">
+            <summary>
+            Блокирани уебсайтове
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Policy.BlockedApplications">
+            <summary>
+            Блокирани приложения
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Policy.BlockedFileExtensions">
+            <summary>
+            Блокирани файлови разширения
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Policy.MaxScreenTimeSeconds">
+            <summary>
+            Максимално време на екрана в секунди (0 = неограничено)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Policy.AllowedInstallations">
+            <summary>
+            Разрешени приложения за инсталация
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Policy.BlockedInstallations">
+            <summary>
+            Блокирани приложения за инсталация
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Policy.AllowedApplications">
+            <summary>
+            Whitelist на приложения – само тези са разрешени (AppWhitelistMode трябва да е true)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Policy.AppWhitelistMode">
+            <summary>
+            Whitelist режим за приложения: ако е true, блокира всичко ОСВЕН AllowedApplications
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Policy.AllowedWebsites">
+            <summary>
+            Whitelist на сайтове – само тези са разрешени (WebWhitelistMode трябва да е true)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Policy.WebWhitelistMode">
+            <summary>
+            Whitelist режим за сайтове: ако е true, блокира всичко ОСВЕН AllowedWebsites
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Policy.BlockUsbAccess">
+            <summary>
+            Дали да се блокира достъпът до USB устройства
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Policy.BlockPrinterAccess">
+            <summary>
+            Дали да се блокира достъпът до принтери
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Policy.BlockBluetoothAccess">
+            <summary>
+            Дали да се блокира достъпът до Bluetooth
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Policy.TargetMachines">
+            <summary>
+            Машини, към които се прилага политиката
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Policy.TargetUsers">
+            <summary>
+            Потребители, към които се прилага политиката
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Policy.CreatedAt">
+            <summary>
+            Време на създаване
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.Policy.UpdatedAt">
+            <summary>
+            Време на обновяване
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Models.RemoteDesktopSession">
+            <summary>
+            Модел на remote desktop сесия
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.RemoteDesktopSession.SessionId">
+            <summary>
+            Уникален ID на сесията (6-символен код)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.RemoteDesktopSession.MachineName">
+            <summary>
+            Име на машината (host)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.RemoteDesktopSession.HostConnectionId">
+            <summary>
+            SignalR Connection ID на host-а
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.RemoteDesktopSession.ViewerConnectionId">
+            <summary>
+            SignalR Connection ID на viewer-а
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.RemoteDesktopSession.RequestedByUser">
+            <summary>
+            Потребител който е заявил control
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.RemoteDesktopSession.IsAuthorized">
+            <summary>
+            Дали контролът е одобрен
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.RemoteDesktopSession.ControlEnabled">
+            <summary>
+            Дали viewer има control права
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.RemoteDesktopSession.AutoApprove">
+            <summary>
+            Автоматично одобряване на контрол без потвърждение от host
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.RemoteDesktopSession.CreatedAt">
+            <summary>
+            Кога е създадена сесията
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.RemoteDesktopSession.LastActivity">
+            <summary>
+            Последна активност
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.RemoteDesktopSession.TimeoutMinutes">
+            <summary>
+            Timeout в минути
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.RemoteDesktopSession.IsExpired">
+            <summary>
+            Дали сесията е изтекла
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.RemoteDesktopSession.IsActive">
+            <summary>
+            Дали сесията е активна (има свързан viewer)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.RemoteDesktopSession.FrameRate">
+            <summary>
+            Frame rate (FPS)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.RemoteDesktopSession.Quality">
+            <summary>
+            JPEG качество (1-100)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.RemoteDesktopSession.FramesSent">
+            <summary>
+            Брой изпратени frames
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.RemoteDesktopSession.InputCommandsReceived">
+            <summary>
+            Брой получени input commands
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Models.ServiceConfiguration">
+            <summary>
+            Конфигурация за комуникация със сървъра
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ServiceConfiguration.ServiceUrl">
+            <summary>
+            URL на централния сървър
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ServiceConfiguration.ApiKey">
+            <summary>
+            API ключ за автентикация
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ServiceConfiguration.MachineId">
+            <summary>
+            Уникален идентификатор на машината
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ServiceConfiguration.RequireVpn">
+            <summary>
+            Дали се изисква VPN връзка
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ServiceConfiguration.VpnCheckInterval">
+            <summary>
+            Интервал за проверка на VPN връзка (в секунди)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ServiceConfiguration.VpnGateways">
+            <summary>
+            VPN gateway адреси за проверка
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ServiceConfiguration.VpnProcessNames">
+            <summary>
+            Имена на VPN процеси
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ServiceConfiguration.OfflineMode">
+            <summary>
+            Дали да работи в offline режим
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ServiceConfiguration.OfflineDataRetention">
+            <summary>
+            Дни за съхранение на offline данни
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ServiceConfiguration.OfflineStoragePath">
+            <summary>
+            Път за съхранение на offline данни
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ServiceConfiguration.ConnectionTimeout">
+            <summary>
+            Timeout за връзка (в секунди)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ServiceConfiguration.RetryInterval">
+            <summary>
+            Интервал между опити за свързване (в секунди)
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ServiceConfiguration.MaxRetries">
+            <summary>
+            Максимален брой опити
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ServiceConfiguration.ScreenshotEnabled">
+            <summary>
+            Дали да се правят скрийншотове на екрана на потребителя
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.ServiceConfiguration.ScreenshotIntervalMinutes">
+            <summary>
+            Интервал между скрийншотове (в минути)
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Models.UserActivity">
+            <summary>
+            Активност на потребител
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.UserActivity.Id">
+            <summary>
+            Идентификатор на активността
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.UserActivity.Username">
+            <summary>
+            Потребителско име
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.UserActivity.Domain">
+            <summary>
+            Домейн
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.UserActivity.MachineName">
+            <summary>
+            Име на машината
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.UserActivity.StartTime">
+            <summary>
+            Време на начало на активността
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.UserActivity.EndTime">
+            <summary>
+            Време на край на активността
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.UserActivity.ScreenTimeSeconds">
+            <summary>
+            Общо време на екрана в секунди
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.UserActivity.OpenedFiles">
+            <summary>
+            Списък с отворени файлове
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.UserActivity.VisitedWebsites">
+            <summary>
+            Списък с посещени сайтове
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.UserActivity.OpenedApplications">
+            <summary>
+            Списък с отворени приложения
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Models.OpenedFile">
+            <summary>
+            Отворен файл
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.OpenedFile.FilePath">
+            <summary>
+            Път до файла
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.OpenedFile.OpenedAt">
+            <summary>
+            Време на отваряне
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.OpenedFile.ClosedAt">
+            <summary>
+            Време на затваряне
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.OpenedFile.ApplicationName">
+            <summary>
+            Приложение, което е отворило файла
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Models.VisitedWebsite">
+            <summary>
+            Посетен уебсайт
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.VisitedWebsite.Url">
+            <summary>
+            URL на сайта
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.VisitedWebsite.Title">
+            <summary>
+            Заглавие на страницата
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.VisitedWebsite.VisitedAt">
+            <summary>
+            Време на посещение
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.VisitedWebsite.Browser">
+            <summary>
+            Браузър
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.VisitedWebsite.DurationSeconds">
+            <summary>
+            Продължителност на посещението в секунди
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Models.OpenedApplication">
+            <summary>
+            Отворено приложение
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.OpenedApplication.ApplicationName">
+            <summary>
+            Име на приложението
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.OpenedApplication.ExecutablePath">
+            <summary>
+            Път до изпълнимия файл
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.OpenedApplication.StartedAt">
+            <summary>
+            Време на стартиране
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.OpenedApplication.ClosedAt">
+            <summary>
+            Време на затваряне
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Models.OpenedApplication.UsageTimeSeconds">
+            <summary>
+            Общо време на използване в секунди
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.ActivityMonitorService">
+            <summary>
+            Реализация на сервис за мониторинг на активност
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ActivityMonitorService.#ctor(ADS.WindowsAuth.Core.Services.ILoggerService)">
+            <summary>
+            Конструктор
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.AdService">
+            <summary>
+            Реализация на Active Directory сервис
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.AsyncSessionService">
+            <summary>
+            Async implementation of session management service
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.ConnectionService">
+            <summary>
+            Реализация на сервис за управление на връзки
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.DatabaseService">
+            <summary>
+            Сервис за работа с базата данни
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.EnhancedLoggerService">
+            <summary>
+            Enhanced logger service using Serilog for structured logging
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.EnhancedLoggerService.LogAuthenticationAttempt(System.String,System.String,System.String,System.Boolean,System.String)">
+            <summary>
+            Logs authentication attempt with structured data
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.EnhancedLoggerService.LogSessionCreated(System.String,System.String,System.String,System.String)">
+            <summary>
+            Logs session creation with structured data
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.EnhancedLoggerService.LogSessionStatusChanged(System.String,System.String,System.String,System.String)">
+            <summary>
+            Logs session status change
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.EnhancedLoggerService.LogLdapOperation(System.String,System.String,System.String,System.Boolean,System.TimeSpan,System.String)">
+            <summary>
+            Logs LDAP operations with performance metrics
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.EnhancedLoggerService.LogDatabaseOperation(System.String,System.String,System.Boolean,System.String)">
+            <summary>
+            Logs database operations
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.IActivityMonitorService">
+            <summary>
+            Интерфейс за мониторинг на активност
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IActivityMonitorService.StartMonitoring(System.String,System.String,System.String)">
+            <summary>
+            Започва мониторинг на активност за потребител
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IActivityMonitorService.StopMonitoring(System.String,System.String)">
+            <summary>
+            Спира мониторинг на активност
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IActivityMonitorService.RegisterFileOpen(System.String,System.String,System.String,System.String)">
+            <summary>
+            Регистрира отваряне на файл
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IActivityMonitorService.RegisterFileClose(System.String,System.String,System.String)">
+            <summary>
+            Регистрира затваряне на файл
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IActivityMonitorService.RegisterWebsiteVisit(System.String,System.String,System.String,System.String,System.String,System.Int32)">
+            <summary>
+            Регистрира посещение на уебсайт
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IActivityMonitorService.RegisterApplicationStart(System.String,System.String,System.String,System.String)">
+            <summary>
+            Регистрира стартиране на приложение
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IActivityMonitorService.RegisterApplicationClose(System.String,System.String,System.String)">
+            <summary>
+            Регистрира затваряне на приложение
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IActivityMonitorService.UpdateScreenTime(System.String,System.String,System.Int32)">
+            <summary>
+            Обновява времето на екрана
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IActivityMonitorService.GetUserActivity(System.String,System.String)">
+            <summary>
+            Получава активността за потребител
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IActivityMonitorService.GetAllActivities(System.Nullable{System.DateTime},System.Nullable{System.DateTime})">
+            <summary>
+            Получава всички активности
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IActivityMonitorService.RemoveMachine(System.String)">
+            <summary>
+            Премахва всички активности за дадена машина
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.IAdService">
+            <summary>
+            Интерфейс за Active Directory сервис
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Services.IAdService.IsEnabled">
+            <summary>
+            Дали AD е активиран
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IAdService.UserExists(System.String)">
+            <summary>
+            Проверява дали потребителят съществува в AD
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IAdService.ValidateCredentials(System.String,System.String)">
+            <summary>
+            Валидира credentials срещу AD
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IAdService.GetUserInfo(System.String)">
+            <summary>
+            Получава информация за потребител от AD
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IAdService.GetAllUsers">
+            <summary>
+            Получава всички потребители от AD
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IAdService.GetUserGroups(System.String)">
+            <summary>
+            Получава групите на потребител
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.AdUserInfo">
+            <summary>
+            Информация за AD потребител
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.IAsyncSessionService">
+            <summary>
+            Async interface for session management
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IAsyncSessionService.CreateSessionAsync">
+            <summary>
+            Creates a new authentication session asynchronously
+            </summary>
+            <returns>The created session</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IAsyncSessionService.CreateSessionAsync(System.String,System.String)">
+            <summary>
+            Creates a new authentication session with specified user and domain asynchronously
+            </summary>
+            <param name="username">Username</param>
+            <param name="domain">Domain</param>
+            <returns>The created session</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IAsyncSessionService.GetSessionByTokenAsync(System.String)">
+            <summary>
+            Gets session by access token asynchronously
+            </summary>
+            <param name="accessToken">Access token</param>
+            <returns>The session or null if not found</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IAsyncSessionService.ApproveSessionAsync(System.String)">
+            <summary>
+            Approves session asynchronously
+            </summary>
+            <param name="sessionId">Session identifier</param>
+            <returns>Whether the operation was successful</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IAsyncSessionService.RejectSessionAsync(System.String)">
+            <summary>
+            Rejects session asynchronously
+            </summary>
+            <param name="sessionId">Session identifier</param>
+            <returns>Whether the operation was successful</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IAsyncSessionService.CleanupExpiredSessionsAsync">
+            <summary>
+            Cleans up expired sessions asynchronously
+            </summary>
+            <returns>Number of cleaned up sessions</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IAsyncSessionService.GetAllSessionsAsync">
+            <summary>
+            Gets all active sessions asynchronously (for debugging)
+            </summary>
+            <returns>List of active sessions</returns>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.IConnectionService">
+            <summary>
+            Интерфейс за управление на връзки
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IConnectionService.CheckConnectionAsync">
+            <summary>
+            Проверява дали има връзка със сървъра
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IConnectionService.IsVpnConnected">
+            <summary>
+            Проверява дали VPN е активен
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IConnectionService.IsOfflineMode">
+            <summary>
+            Проверява дали машината е в offline режим
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IConnectionService.SyncOfflineDataAsync(System.Net.Http.HttpClient)">
+            <summary>
+            Синхронизира offline данни със сървъра.
+            Ако се подаде httpClient, изпраща буферираните събития при налична връзка.
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.IDatabaseService">
+            <summary>
+            Интерфейс за работа с базата данни
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IDatabaseService.SaveApplicationEventAsync(ADS.WindowsAuth.Core.Data.Entities.ApplicationEventEntity)">
+            <summary>
+            Записва Application Event
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IDatabaseService.SaveFileActivityAsync(ADS.WindowsAuth.Core.Data.Entities.FileActivityEntity)">
+            <summary>
+            Записва File Activity
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IDatabaseService.SaveNetworkActivityAsync(ADS.WindowsAuth.Core.Data.Entities.NetworkActivityEntity)">
+            <summary>
+            Записва Network Activity
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IDatabaseService.SaveSystemInfoAsync(ADS.WindowsAuth.Core.Data.Entities.SystemInfoEntity)">
+            <summary>
+            Записва System Info
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IDatabaseService.SaveUsbDeviceAsync(ADS.WindowsAuth.Core.Data.Entities.UsbDeviceEntity)">
+            <summary>
+            Записва USB Device Event
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IDatabaseService.SaveScreenTimeAsync(ADS.WindowsAuth.Core.Data.Entities.ScreenTimeEntity)">
+            <summary>
+            Записва Screen Time
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IDatabaseService.SaveOrUpdateUserActivityAsync(ADS.WindowsAuth.Core.Data.Entities.UserActivityEntity)">
+            <summary>
+            Записва или обновява User Activity
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IDatabaseService.SaveOrUpdateAuthSessionAsync(ADS.WindowsAuth.Core.Data.Entities.AuthSessionEntity)">
+            <summary>
+            Записва или обновява Auth Session
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IDatabaseService.SaveWindowsEventAsync(ADS.WindowsAuth.Core.Data.Entities.WindowsEventEntity)">
+            <summary>
+            Записва Windows Event
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IDatabaseService.GetOrCreateAdUserAsync(System.String,System.String)">
+            <summary>
+            Получава или създава AD потребител
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IDatabaseService.SyncActiveDirectoryAsync">
+            <summary>
+            Синхронизира AD потребители и групи
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IDatabaseService.SaveLoginEventAsync(ADS.WindowsAuth.Core.Data.Entities.LoginEventEntity)">
+            <summary>
+            Записва Login Event
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IDatabaseService.SaveEmailActivityAsync(ADS.WindowsAuth.Core.Data.Entities.EmailActivityEntity)">
+            <summary>
+            Записва Email Activity (получен/изпратен/отговорен имейл от Outlook)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IDatabaseService.SaveVisitedWebsiteAsync(ADS.WindowsAuth.Core.Data.Entities.VisitedWebsiteEntity)">
+            <summary>
+            Записва посещение на уебсайт (от Monitor или browser extension)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IDatabaseService.GetActiveAuthSessionsAsync">
+            <summary>
+            Получава активни Auth сесии от базата данни
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IDatabaseService.GetAllPoliciesAsync">
+            <summary>
+            Получава всички политики от базата данни
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IDatabaseService.SavePolicyAsync(ADS.WindowsAuth.Core.Data.Entities.PolicyEntity)">
+            <summary>
+            Записва нова политика
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IDatabaseService.UpdatePolicyAsync(ADS.WindowsAuth.Core.Data.Entities.PolicyEntity)">
+            <summary>
+            Обновява съществуваща политика
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IDatabaseService.DeletePolicyAsync(System.Int32)">
+            <summary>
+            Изтрива политика
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.IJwtService">
+            <summary>
+            JWT token service interface
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IJwtService.GenerateToken(ADS.WindowsAuth.Core.Services.UserInfo,ADS.WindowsAuth.Core.Models.AuthSession)">
+            <summary>
+            Generates JWT token for authenticated user
+            </summary>
+            <param name="user">User information</param>
+            <param name="session">Session information</param>
+            <returns>JWT token</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IJwtService.ValidateToken(System.String)">
+            <summary>
+            Validates JWT token
+            </summary>
+            <param name="token">JWT token</param>
+            <returns>Token validation result</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IJwtService.GetUserFromToken(System.String)">
+            <summary>
+            Gets user information from token
+            </summary>
+            <param name="token">JWT token</param>
+            <returns>User information or null if invalid</returns>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.UserInfo">
+            <summary>
+            User information for JWT token
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.TokenValidationResult">
+            <summary>
+            Token validation result
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.ILockScreenService">
+            <summary>
+            Интерфейс за показване на QR код на lock screen
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ILockScreenService.ShowQrCode(System.String)">
+            <summary>
+            Показва QR код на lock screen
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ILockScreenService.HideQrCode">
+            <summary>
+            Скрива QR кода
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ILockScreenService.UpdateQrCode(System.String)">
+            <summary>
+            Обновява QR кода
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.ILoggerService">
+            <summary>
+            Интерфейс за сервис за логване
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ILoggerService.LogInfo(System.String)">
+            <summary>
+            Логва информационно съобщение
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ILoggerService.LogWarning(System.String)">
+            <summary>
+            Логва предупреждение
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ILoggerService.LogError(System.String,System.Exception)">
+            <summary>
+            Логва грешка
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.InputCapture">
+            <summary>
+            Прихваща клавиши и кликове чрез Windows low-level hooks и изпраща batch към API.
+            Работи само в потребителска сесия (не в Session 0). Monitor го стартира чрез RemoteDesktopHost.
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.IOfflineEventBuffer">
+            <summary>
+            Интерфейс за буфериране на събития при липса на връзка с API.
+            Съхранява неуспешно изпратени заявки локално и ги прехвърля при възстановяване на връзката.
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IOfflineEventBuffer.Enqueue(System.String,System.String)">
+            <summary>
+            Добавя събитие за изпращане към опашката.
+            </summary>
+            <param name="endpoint">API endpoint (напр. /api/activity/start)</param>
+            <param name="payloadJson">JSON payload за POST заявката</param>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IOfflineEventBuffer.GetPending">
+            <summary>
+            Връща всички чакащи събития (без да ги премахва).
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IOfflineEventBuffer.Remove(System.String)">
+            <summary>
+            Премахва изпратено събитие от буфера.
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.Core.Services.IOfflineEventBuffer.PendingCount">
+            <summary>
+            Брой чакащи събития.
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.OfflineEvent">
+            <summary>
+            Един буферирано събитие.
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.IPolicyService">
+            <summary>
+            Интерфейс за управление на политики
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IPolicyService.CreatePolicy(ADS.WindowsAuth.Core.Models.Policy)">
+            <summary>
+            Създава нова политика
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IPolicyService.UpdatePolicy(System.Int32,ADS.WindowsAuth.Core.Models.Policy)">
+            <summary>
+            Обновява политика
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IPolicyService.DeletePolicy(System.Int32)">
+            <summary>
+            Изтрива политика
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IPolicyService.GetPolicy(System.Int32)">
+            <summary>
+            Получава политика по ID
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IPolicyService.GetAllPolicies">
+            <summary>
+            Получава всички политики
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IPolicyService.GetActivePoliciesForMachine(System.String,System.String)">
+            <summary>
+            Получава активни политики за машина
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IPolicyService.IsWebsiteBlocked(System.String,System.String,System.String)">
+            <summary>
+            Проверява дали уебсайт е блокиран
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IPolicyService.IsApplicationBlocked(System.String,System.String,System.String)">
+            <summary>
+            Проверява дали приложение е блокирано
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IPolicyService.IsFileExtensionBlocked(System.String,System.String,System.String)">
+            <summary>
+            Проверява дали файлово разширение е блокирано
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.IRemoteDesktopSessionService">
+            <summary>
+            Service за управление на remote desktop сесии
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IRemoteDesktopSessionService.CreateSessionAsync(System.String,System.String)">
+            <summary>
+            Създава нова remote desktop сесия
+            </summary>
+            <param name="machineName">Име на машината</param>
+            <param name="requestedBy">Потребител който заявява</param>
+            <returns>Session ID</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IRemoteDesktopSessionService.GetSessionAsync(System.String)">
+            <summary>
+            Получава сесия по ID
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IRemoteDesktopSessionService.GetActiveSessionsAsync">
+            <summary>
+            Получава всички активни сесии
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IRemoteDesktopSessionService.GetSessionByMachineAsync(System.String)">
+            <summary>
+            Получава сесия по име на машина
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IRemoteDesktopSessionService.RegisterHostAsync(System.String,System.String,System.Boolean)">
+            <summary>
+            Регистрира host connection
+            </summary>
+            <param name="autoApprove">Автоматично одобряване на контрол при заявка от viewer</param>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IRemoteDesktopSessionService.RegisterViewerAsync(System.String,System.String,System.String)">
+            <summary>
+            Регистрира viewer connection
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IRemoteDesktopSessionService.AuthorizeControlAsync(System.String)">
+            <summary>
+            Одобрява контрол за сесия
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IRemoteDesktopSessionService.DenyControlAsync(System.String)">
+            <summary>
+            Забранява контрол за сесия
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IRemoteDesktopSessionService.UpdateActivityAsync(System.String)">
+            <summary>
+            Обновява последна активност
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IRemoteDesktopSessionService.ClearHostConnectionAsync(System.String)">
+            <summary>
+            Изчиства само host connection ID (host се disconnectна, но сесията остава жива)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IRemoteDesktopSessionService.ClearViewerConnectionAsync(System.String)">
+            <summary>
+            Изчиства само viewer connection ID (viewer се disconnectна, но сесията остава жива)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IRemoteDesktopSessionService.EndSessionAsync(System.String)">
+            <summary>
+            Приключва сесия напълно (изтрива я)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IRemoteDesktopSessionService.CleanupExpiredSessionsAsync">
+            <summary>
+            Премахва изтекли сесии
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IRemoteDesktopSessionService.CreateOrGetSessionAsync(System.String,System.String)">
+            <summary>
+            Създава сесия ако не съществува за дадена машина, иначе връща съществуващата.
+            Връща (sessionId, дали е новосъздадена).
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.IRemoteInputService">
+            <summary>
+            Service за симулиране на mouse и keyboard input
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IRemoteInputService.MoveMouse(System.Int32,System.Int32)">
+            <summary>
+            Премества мишката на определена позиция
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IRemoteInputService.ClickMouse(System.Windows.Forms.MouseButtons)">
+            <summary>
+            Симулира mouse click
+            </summary>
+            <param name="button">Left, Right или Middle</param>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IRemoteInputService.DoubleClick(System.Windows.Forms.MouseButtons)">
+            <summary>
+            Симулира double click
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IRemoteInputService.ScrollWheel(System.Int32)">
+            <summary>
+            Симулира mouse wheel scroll
+            </summary>
+            <param name="delta">Scroll amount (positive = up, negative = down)</param>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IRemoteInputService.SendKeyPress(System.Windows.Forms.Keys)">
+            <summary>
+            Симулира натискане на клавиш
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IRemoteInputService.SendKeyDown(System.Windows.Forms.Keys)">
+            <summary>
+            Симулира key down
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IRemoteInputService.SendKeyUp(System.Windows.Forms.Keys)">
+            <summary>
+            Симулира key up
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IRemoteInputService.SendText(System.String)">
+            <summary>
+            Изпраща текст като последователност от key presses
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.IScreenCaptureService">
+            <summary>
+            Service за заснемане на екрана
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IScreenCaptureService.CaptureScreenAsync(System.Int32,System.Int32,System.Int32)">
+            <summary>
+            Заснема целия екран като JPEG изображение
+            </summary>
+            <param name="quality">JPEG качество (1-100)</param>
+            <param name="width">Целева ширина (0 = original)</param>
+            <param name="height">Целева височина (0 = original)</param>
+            <returns>JPEG байтове</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IScreenCaptureService.GetScreenSize">
+            <summary>
+            Получава размерите на екрана
+            </summary>
+            <returns>Ширина и височина</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IScreenCaptureService.CaptureRegionAsync(System.Drawing.Rectangle,System.Int32)">
+            <summary>
+            Заснема специфичен регион от екрана
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.ISessionService">
+            <summary>
+            Интерфейс за управление на сесии за аутентикация
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ISessionService.CreateSession">
+            <summary>
+            Създава нова сесия за аутентикация
+            </summary>
+            <returns>Създадената сесия</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ISessionService.CreateSession(System.String,System.String)">
+            <summary>
+            Създава нова сесия за аутентикация с указан потребител и домейн
+            </summary>
+            <param name="username">Потребителско име</param>
+            <param name="domain">Домейн</param>
+            <returns>Създадената сесия</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ISessionService.CreateSessionAsync(System.String,System.String,System.String,System.String)">
+            <summary>
+            Създава нова сесия за аутентикация с пълни параметри (async версия)
+            </summary>
+            <param name="username">Потребителско име</param>
+            <param name="domain">Домейн</param>
+            <param name="clientType">Тип на клиента</param>
+            <param name="clientIp">IP адрес на клиента</param>
+            <returns>Създадената сесия</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ISessionService.GetSessionByToken(System.String)">
+            <summary>
+            Получава сесия по токен
+            </summary>
+            <param name="accessToken">Токен за достъп</param>
+            <returns>Сесията или null ако не е намерена</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ISessionService.GetSessionById(System.String)">
+            <summary>
+            Получава сесия по идентификатор
+            </summary>
+            <param name="sessionId">Идентификатор на сесията</param>
+            <returns>Сесията или null ако не е намерена</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ISessionService.ApproveSession(System.String,System.String,System.String,System.String)">
+            <summary>
+            Одобрява сесия
+            </summary>
+            <param name="sessionId">Идентификатор на сесията</param>
+            <param name="approvedUsername">Потребител който одобрява (опционално)</param>
+            <param name="approvedPassword">Парола за автоматичен login (опционално)</param>
+            <param name="approvedDomain">Домейн на одобрилия потребител (опционално)</param>
+            <returns>Дали операцията е успешна</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ISessionService.RejectSession(System.String)">
+            <summary>
+            Отхвърля сесия
+            </summary>
+            <param name="sessionId">Идентификатор на сесията</param>
+            <returns>Дали операцията е успешна</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ISessionService.CleanupExpiredSessions">
+            <summary>
+            Премахва изтекла сесия
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ISessionService.GetAllSessions">
+            <summary>
+            Получава всички активни сесии (за debugging)
+            </summary>
+            <returns>Списък с активни сесии</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ISessionService.LoadSessionsFromDatabaseAsync(ADS.WindowsAuth.Core.Services.IDatabaseService)">
+            <summary>
+            Зарежда активни сесии от базата данни (при стартиране)
+            </summary>
+            <param name="databaseService">Database service за достъп до базата данни</param>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.IWindowsAuthService">
+            <summary>
+            Интерфейс за сервис за Windows Domain аутентикация
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IWindowsAuthService.ValidateCredentials(System.String,System.String,System.String)">
+            <summary>
+            Проверява дали потребителят е валиден в домейна
+            </summary>
+            <param name="username">Потребителско име</param>
+            <param name="password">Парола</param>
+            <param name="domain">Домейн</param>
+            <returns>Дали аутентикацията е успешна</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IWindowsAuthService.ValidateCredentialsAsync(System.String,System.String,System.String)">
+            <summary>
+            Проверява дали потребителят е валиден в домейна (async версия)
+            </summary>
+            <param name="username">Потребителско име</param>
+            <param name="password">Парола</param>
+            <param name="domain">Домейн</param>
+            <returns>Дали аутентикацията е успешна</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IWindowsAuthService.GetCurrentWindowsUser">
+            <summary>
+            Получава текущия Windows потребител
+            </summary>
+            <returns>Име на потребителя и домейна</returns>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.IWindowsFirewallService">
+            <summary>
+            Интерфейс за управление на Windows Firewall правила
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IWindowsFirewallService.BlockDomainAsync(System.String)">
+            <summary>
+            Блокира домейн чрез Windows Firewall
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IWindowsFirewallService.UnblockDomainAsync(System.String)">
+            <summary>
+            Разблокира домейн
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IWindowsFirewallService.BlockIpAddressAsync(System.String)">
+            <summary>
+            Блокира IP адрес
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IWindowsFirewallService.UnblockIpAddressAsync(System.String)">
+            <summary>
+            Разблокира IP адрес
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IWindowsFirewallService.BlockPortAsync(System.Int32,System.String)">
+            <summary>
+            Блокира порт
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IWindowsFirewallService.UnblockPortAsync(System.Int32,System.String)">
+            <summary>
+            Разблокира порт
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IWindowsFirewallService.GetBlockedDomainsAsync">
+            <summary>
+            Получава всички блокирани домейни
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.IWindowsFirewallService.IsDomainBlockedAsync(System.String)">
+            <summary>
+            Проверява дали домейн е блокиран
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.JwtService">
+            <summary>
+            JWT token service implementation
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.LoggerService">
+            <summary>
+            Реализация на сервис за логване във файлове
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.LoggerService.#ctor(System.String,System.String)">
+            <summary>
+            Конструктор на LoggerService
+            </summary>
+            <param name="applicationDirectory">Директория на приложението</param>
+            <param name="apiUrl">Опционален API URL за изпращане на логове</param>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.LoggerService.LogInfo(System.String)">
+            <summary>
+            Логва информационно съобщение
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.LoggerService.LogWarning(System.String)">
+            <summary>
+            Логва предупреждение
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.LoggerService.LogError(System.String,System.Exception)">
+            <summary>
+            Логва грешка
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.LoggerService.Dispose">
+            <summary>
+            Освобождаване на ресурси
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.MockDatabaseService">
+            <summary>
+            Mock Database Service implementation that works without database
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.OfflineEventBuffer">
+            <summary>
+            Записва чакащи събития във файл в OfflineStoragePath. При прекъсване на връзката
+            събитията се събират локално и се прехвърлят при възстановяване.
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.PolicyService">
+            <summary>
+            Реализация на сервис за управление на политики
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.PolicyService.#ctor(ADS.WindowsAuth.Core.Services.ILoggerService,Microsoft.Extensions.DependencyInjection.IServiceScopeFactory)">
+            <summary>
+            Конструктор за API с достъп до БД (scopeFactory подаден).
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.PolicyService.#ctor(ADS.WindowsAuth.Core.Services.ILoggerService)">
+            <summary>
+            Конструктор за Monitor/Service без БД – политиките остават само в паметта.
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.RemoteDesktopSessionService">
+            <summary>
+            Имплементация на remote desktop session service
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.RemoteDesktopSessionService.CreateSessionAsync(System.String,System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.RemoteDesktopSessionService.GetSessionAsync(System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.RemoteDesktopSessionService.GetActiveSessionsAsync">
+            <inheritdoc/>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.RemoteDesktopSessionService.GetSessionByMachineAsync(System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.RemoteDesktopSessionService.RegisterHostAsync(System.String,System.String,System.Boolean)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.RemoteDesktopSessionService.CreateOrGetSessionAsync(System.String,System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.RemoteDesktopSessionService.RegisterViewerAsync(System.String,System.String,System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.RemoteDesktopSessionService.AuthorizeControlAsync(System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.RemoteDesktopSessionService.DenyControlAsync(System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.RemoteDesktopSessionService.UpdateActivityAsync(System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.RemoteDesktopSessionService.ClearHostConnectionAsync(System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.RemoteDesktopSessionService.ClearViewerConnectionAsync(System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.RemoteDesktopSessionService.EndSessionAsync(System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.RemoteDesktopSessionService.CleanupExpiredSessionsAsync">
+            <inheritdoc/>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.RemoteInputService">
+            <summary>
+            Имплементация на remote input service използвайки User32
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.RemoteInputService.MoveMouse(System.Int32,System.Int32)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.RemoteInputService.ClickMouse(System.Windows.Forms.MouseButtons)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.RemoteInputService.DoubleClick(System.Windows.Forms.MouseButtons)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.RemoteInputService.ScrollWheel(System.Int32)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.RemoteInputService.SendKeyPress(System.Windows.Forms.Keys)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.RemoteInputService.SendKeyDown(System.Windows.Forms.Keys)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.RemoteInputService.SendKeyUp(System.Windows.Forms.Keys)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.RemoteInputService.SendText(System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.ResilientWindowsAuthService">
+            <summary>
+            Resilient Windows Domain authentication service with retry logic
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ResilientWindowsAuthService.ValidateCredentialsAsync(System.String,System.String,System.String)">
+            <summary>
+            Validates credentials with retry logic
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ResilientWindowsAuthService.ValidateCredentials(System.String,System.String,System.String)">
+            <summary>
+            Synchronous version for backward compatibility
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ResilientWindowsAuthService.ValidateCredentialsInternal(System.String,System.String,System.String)">
+            <summary>
+            Internal LDAP validation logic
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ResilientWindowsAuthService.GetCurrentWindowsUser">
+            <summary>
+            Gets current Windows user with fallback
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ResilientWindowsAuthService.IsAuthenticationFailure(System.Int32)">
+            <summary>
+            Checks if the error code indicates an authentication failure (non-retryable)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ResilientWindowsAuthService.TestLdapConnectivityAsync(System.String)">
+            <summary>
+            Tests LDAP connectivity
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.ScreenCaptureService">
+            <summary>
+            Имплементация на screen capture service използвайки GDI32
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ScreenCaptureService.GetScreenSize">
+            <inheritdoc/>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ScreenCaptureService.CaptureScreenAsync(System.Int32,System.Int32,System.Int32)">
+            <inheritdoc/>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.ScreenCaptureService.CaptureRegionAsync(System.Drawing.Rectangle,System.Int32)">
+            <inheritdoc/>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.SessionService">
+            <summary>
+            Реализация на сервис за управление на сесии
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.SessionService.#ctor(ADS.WindowsAuth.Core.Services.ILoggerService,ADS.WindowsAuth.Core.Services.IWindowsAuthService)">
+            <summary>
+            Конструктор на SessionService
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.SessionService.CreateSession">
+            <summary>
+            Създава нова сесия за аутентикация
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.SessionService.CreateSession(System.String,System.String)">
+            <summary>
+            Създава нова сесия за аутентикация с указан потребител и домейн
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.SessionService.CreateSessionAsync(System.String,System.String,System.String,System.String)">
+            <summary>
+            Създава нова сесия за аутентикация с пълни параметри (async версия)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.SessionService.GetSessionById(System.String)">
+            <summary>
+            Получава сесия по идентификатор
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.SessionService.GetSessionByToken(System.String)">
+            <summary>
+            Получава сесия по токен
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.SessionService.ApproveSession(System.String,System.String,System.String,System.String)">
+            <summary>
+            Одобрява сесия
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.SessionService.RejectSession(System.String)">
+            <summary>
+            Отхвърля сесия
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.SessionService.CleanupExpiredSessions">
+            <summary>
+            Премахва изтекла сесия
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.SessionService.GetAllSessions">
+            <summary>
+            Получава всички активни сесии (за debugging)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.SessionService.LoadSessionsFromDatabaseAsync(ADS.WindowsAuth.Core.Services.IDatabaseService)">
+            <summary>
+            Зарежда активни сесии от базата данни (при стартиране)
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.WindowsAuthService">
+            <summary>
+            Реализация на сервис за Windows Domain аутентикация
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.WindowsAuthService.#ctor(ADS.WindowsAuth.Core.Services.ILoggerService)">
+            <summary>
+            Конструктор на WindowsAuthService
+            </summary>
+            <param name="logger">Сервис за логване</param>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.WindowsAuthService.ValidateCredentials(System.String,System.String,System.String)">
+            <summary>
+            Проверява дали потребителят е валиден в домейна
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.WindowsAuthService.ValidateCredentialsAsync(System.String,System.String,System.String)">
+            <summary>
+            Проверява дали потребителят е валиден в домейна (async версия)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.Core.Services.WindowsAuthService.GetCurrentWindowsUser">
+            <summary>
+            Получава текущия Windows потребител (с timeout за да не блокира)
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.Core.Services.WindowsFirewallService">
+            <summary>
+            Реализация на сервис за управление на Windows Firewall
+            Използва netsh и PowerShell команди за управление на firewall правила
+            </summary>
+        </member>
+    </members>
+</doc>

@@ -41,6 +41,11 @@ public class RemoteDesktopSession
     public bool ControlEnabled { get; set; }
 
     /// <summary>
+    /// Автоматично одобряване на контрол без потвърждение от host
+    /// </summary>
+    public bool AutoApprove { get; set; }
+
+    /// <summary>
     /// Кога е създадена сесията
     /// </summary>
     public DateTime CreatedAt { get; set; }

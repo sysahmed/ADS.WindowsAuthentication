@@ -1,0 +1,75 @@
+@model IEnumerable<Microsoft.AspNetCore.Identity.IdentityRole>
+@{
+    ViewData["Title"] = "Управление на роли";
+    Layout = "_Layout";
+    var roles = Model ?? Enumerable.Empty<Microsoft.AspNetCore.Identity.IdentityRole>();
+}
+
+<div class="container mt-4">
+    <div class="d-flex align-items-center mb-4">
+        <div>
+            <h3 class="mb-0">🎭 Роли</h3>
+            <small class="text-muted">Добавяне и изтриване на роли</small>
+        </div>
+        <a href="/Account/Users" class="btn btn-outline-secondary btn-sm ms-auto">← Потребители</a>
+    </div>
+
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert alert-success">@TempData["Success"]</div>
+    }
+    @if (TempData["Error"] != null)
+    {
+        <div class="alert alert-danger">@TempData["Error"]</div>
+    }
+
+    <div class="row g-4">
+        <div class="col-md-5">
+            <div class="glass-card p-4">
+                <h5 class="mb-3">➕ Нова роля</h5>
+                <form asp-action="AddRole" method="post">
+                    @Html.AntiForgeryToken()
+                    <div class="input-group">
+                        <input type="text" name="roleName" class="form-control" placeholder="Име на роля (напр. Manager)"
+                               required minlength="2" maxlength="50" pattern="[A-Za-z0-9_]+" />
+                        <button type="submit" class="btn btn-primary">Добави</button>
+                    </div>
+                    <small class="text-muted">Само букви, цифри и _</small>
+                </form>
+            </div>
+        </div>
+        <div class="col-md-7">
+            <div class="glass-card p-4">
+                <h5 class="mb-3">Списък с роли</h5>
+                @if (roles.Any())
+                {
+                    <div class="list-group">
+                        @foreach (var role in roles)
+                        {
+                            var roleName = role.Name ?? "";
+                            <div class="list-group-item d-flex align-items-center justify-content-between">
+                                <span class="badge @(roleName == "Admin" ? "bg-danger" : roleName == "Monitor" ? "bg-info" : "bg-secondary")">@roleName</span>
+                                @if (roleName != "Admin" && roleName != "User")
+                                {
+                                    <form asp-action="DeleteRole" method="post" class="d-inline" onsubmit="return confirm('Изтриване на роля @roleName?');">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@role.Id" />
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">🗑 Изтрий</button>
+                                    </form>
+                                }
+                                else
+                                {
+                                    <small class="text-muted">Защитена роля</small>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p class="text-muted mb-0">Няма роли. Добавете първата.</p>
+                }
+            </div>
+        </div>
+    </div>
+</div>

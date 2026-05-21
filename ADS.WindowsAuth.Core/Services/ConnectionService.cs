@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.Net.Http.Json;
 using System.Net.NetworkInformation;
+using System.Text.Json;
 using ADS.WindowsAuth.Core.Models;
 using ADS.WindowsAuth.Core.Services;
 
@@ -12,13 +14,15 @@ public class ConnectionService : IConnectionService
 {
     private readonly ServiceConfiguration _config;
     private readonly ILoggerService _logger;
+    private readonly IOfflineEventBuffer? _offlineBuffer;
     private bool _isOffline = false;
     private DateTime _lastConnectionCheck = DateTime.MinValue;
 
-    public ConnectionService(ServiceConfiguration config, ILoggerService logger)
+    public ConnectionService(ServiceConfiguration config, ILoggerService logger, IOfflineEventBuffer? offlineBuffer = null)
     {
         _config = config;
         _logger = logger;
+        _offlineBuffer = offlineBuffer;
     }
 
     public async Task<bool> CheckConnectionAsync()
@@ -118,24 +122,40 @@ public class ConnectionService : IConnectionService
         return _isOffline || _config.OfflineMode;
     }
 
-    public async Task<bool> SyncOfflineDataAsync()
+    public async Task<bool> SyncOfflineDataAsync(System.Net.Http.HttpClient? httpClient = null)
     {
-        if (!IsOfflineMode())
-        {
-            return true; // Не е в offline режим
-        }
-
         // Проверка за връзка
         bool hasConnection = await CheckConnectionAsync();
-        
-        if (!hasConnection)
-        {
-            return false;
-        }
 
-        // Синхронизация на данни
-        // Тук може да се имплементира логика за изпращане на натрупани данни
-        _logger.LogInfo("Синхронизация на offline данни...");
+        if (!hasConnection)
+            return false;
+
+        // Ако има буфер и HttpClient – изпращаме буферираните събития
+        if (_offlineBuffer != null && httpClient != null && _offlineBuffer.PendingCount > 0)
+        {
+            var pending = _offlineBuffer.GetPending();
+            var sent = 0;
+            foreach (var evt in pending)
+            {
+                try
+                {
+                    var content = new System.Net.Http.StringContent(evt.PayloadJson, System.Text.Encoding.UTF8, "application/json");
+                    var req = new HttpRequestMessage(HttpMethod.Post, evt.Endpoint) { Content = content };
+                    var resp = await httpClient.SendAsync(req);
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        _offlineBuffer.Remove(evt.Id);
+                        sent++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning($"SyncOfflineData: грешка при изпращане на {evt.Endpoint}: {ex.Message}");
+                }
+            }
+            if (sent > 0)
+                _logger.LogInfo($"SyncOfflineData: изпратени {sent} от {pending.Count} чакащи събития към сървъра");
+        }
 
         return true;
     }

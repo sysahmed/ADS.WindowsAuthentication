@@ -1,8 +1,11 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using ADS.WindowsAuth.Core.Models;
 using ADS.WindowsAuth.Core.Services;
 using ADS.WindowsAuth.Core.Data.Entities;
+using ADS.WindowsAuth.API.Services;
 using System.Net;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ADS.WindowsAuth.API.Controllers;
@@ -19,6 +22,27 @@ public class AuthController : ControllerBase
     private readonly IDatabaseService? _databaseService;
     private readonly ILoggerService _logger;
     private readonly IServiceScopeFactory _serviceScopeFactory;
+    private readonly IConfiguration _configuration;
+    private readonly BruteForceProtectionService _bruteForce;
+
+    private string GetClientIp() =>
+        HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+    /// <summary>Проверява дали IP е от вътрешна мрежа (RFC-1918 + loopback)</summary>
+    private static bool IsInternalIp(string ip)
+    {
+        if (ip == "unknown") return false;
+        if (ip == "::1" || ip == "127.0.0.1") return true;
+        if (!System.Net.IPAddress.TryParse(ip, out var addr)) return false;
+        var bytes = addr.GetAddressBytes();
+        if (bytes.Length == 4) // IPv4
+        {
+            return bytes[0] == 10 ||                          // 10.0.0.0/8
+                   (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) || // 172.16.0.0/12
+                   (bytes[0] == 192 && bytes[1] == 168);      // 192.168.0.0/16
+        }
+        return false; // IPv6 — считаме за external
+    }
 
     /// <summary>
     /// Конструктор на AuthController
@@ -28,13 +52,17 @@ public class AuthController : ControllerBase
         IWindowsAuthService windowsAuthService,
         IDatabaseService? databaseService,
         ILoggerService logger,
-        IServiceScopeFactory serviceScopeFactory)
+        IServiceScopeFactory serviceScopeFactory,
+        IConfiguration configuration,
+        BruteForceProtectionService bruteForce)
     {
         _sessionService = sessionService;
         _windowsAuthService = windowsAuthService;
         _databaseService = databaseService; // Може да е null ако базата данни не е достъпна
         _logger = logger;
         _serviceScopeFactory = serviceScopeFactory;
+        _configuration = configuration;
+        _bruteForce = bruteForce;
     }
 
     /// <summary>
@@ -65,6 +93,10 @@ public class AuthController : ControllerBase
             }
             
             _logger.LogInfo($"API: Сесията е създадена успешно: {session.SessionId}");
+
+            // ── IP Binding: записваме IP-а на машината, създала сесията ──────
+            // Само тя (или вътрешна мрежа) ще може да получи паролата след одобрение
+            session.MobileDeviceIp = GetClientIp();
             
             // Записване в базата данни (fire-and-forget с timeout - не блокира заявката)
             // Използваме IServiceScopeFactory за да създадем нов scope в Task.Run
@@ -181,15 +213,36 @@ public class AuthController : ControllerBase
             if (session.Status == SessionStatus.Approved)
             {
                 string username = session.WindowsUsername ?? string.Empty;
-                string domain = "nursan";
+                string domain = _configuration["ActiveDirectory:DomainName"] ?? string.Empty;
                 if (!string.IsNullOrEmpty(session.ApprovedBy) && session.ApprovedBy.Contains('@'))
                 {
                     var parts = session.ApprovedBy.Split('@');
                     if (parts.Length == 2)
                     {
                         username = parts[0];
-                        domain = parts[1]; // Реалният домейн от формата (nursan или machine name)
+                        domain = parts[1];
                     }
+                }
+
+                // ── SECURITY: Паролата се връща САМО на машината, която е създала сесията ──
+                // Credential Provider polling-ва с IP-а на машината (MobileDeviceIp = IP при QR-сканиране)
+                // За обратна съвместимост с Credential Provider, проверяваме дали заявката идва от
+                // записания IP или от вътрешна мрежа (192.168.x.x / 10.x.x.x / 172.16-31.x.x)
+                string clientIp = GetClientIp();
+                bool isInternalNetwork = IsInternalIp(clientIp);
+                bool isSessionCreator = !string.IsNullOrEmpty(session.MobileDeviceIp) &&
+                                        session.MobileDeviceIp == clientIp;
+
+                string? passwordToReturn = null;
+                if ((isSessionCreator || isInternalNetwork) && !session.IsPasswordExpired)
+                {
+                    passwordToReturn = session.ApprovedPassword;
+                    // Изтриваме паролата след еднократно предаване
+                    session.ClearPassword();
+                }
+                else if (session.IsPasswordExpired)
+                {
+                    session.ClearPassword();
                 }
 
                 return Ok(new
@@ -197,7 +250,7 @@ public class AuthController : ControllerBase
                     status = session.Status.ToString(),
                     username = username,
                     domain = domain,
-                    password = session.ApprovedPassword ?? string.Empty,
+                    password = passwordToReturn ?? string.Empty,
                     sessionId = session.SessionId
                 });
             }
@@ -223,6 +276,14 @@ public class AuthController : ControllerBase
     {
         try
         {
+            // ── Brute Force Protection ──────────────────────────────────────────
+            string clientIp = GetClientIp();
+            if (_bruteForce.IsBlocked(clientIp))
+            {
+                _logger.LogWarning($"SECURITY: Блокиран IP {clientIp} се опитва да аутентикира");
+                return StatusCode(403, new { message = "Вашият IP адрес е блокиран поради многобройни неуспешни опити. Свържете се с администратора." });
+            }
+
             if (string.IsNullOrEmpty(request.AccessToken))
             {
                 return BadRequest(new { message = "AccessToken е задължителен" });
@@ -310,6 +371,7 @@ public class AuthController : ControllerBase
                         await _databaseService.SaveOrUpdateAuthSessionAsync(sessionEntity);
                         }
                         
+                        _bruteForce.ClearAttempts(clientIp);
                         _logger.LogInfo($"API: Успешна аутентикация за сесия {session.SessionId} - User: {request.Username}@{request.Domain}");
                         return Ok(new AuthResponse
                         {
@@ -331,8 +393,9 @@ public class AuthController : ControllerBase
                 }
             }
 
+            await _bruteForce.RegisterFailedAttemptAsync(clientIp);
             _sessionService.RejectSession(session.SessionId);
-            
+
             // Записване в базата данни
             if (_databaseService != null)
             {
@@ -396,17 +459,15 @@ public class AuthController : ControllerBase
                 });
             }
 
-            // Проверка и поправка на домейна ако е празен или неправилен
+            // Домейнът ВИНАГИ идва от appsettings (ActiveDirectory:DomainName), не от сесията
+            // Сесията може да съдържа machine name ("AHMEDITDESK") ако е създадена от Credential Provider
             string username = session.WindowsUsername ?? string.Empty;
-            string domain = session.Domain ?? string.Empty;
-            
-            // Ако домейнът е празен или е "IIS APPPOOL", използваме MachineName
-            if (string.IsNullOrWhiteSpace(domain) || 
-                domain.Equals("IIS APPPOOL", StringComparison.OrdinalIgnoreCase))
-            {
-                domain = session.MachineName ?? Environment.MachineName;
-                _logger.LogWarning($"API: Domain е празен или IIS APPPOOL за сесия {session.SessionId}, използвам MachineName: {domain}");
-            }
+            string configuredDomain = _configuration["ActiveDirectory:DomainName"] ?? string.Empty;
+            string domain = !string.IsNullOrWhiteSpace(configuredDomain)
+                ? configuredDomain
+                : (session.Domain ?? Environment.MachineName);
+
+            _logger.LogInfo($"API: GetSessionByToken - configuredDomain='{configuredDomain}', session.Domain='{session.Domain}', returning domain='{domain}'");
             
             // Ако username съдържа @ символ, опитваме се да го разделим
             if (username.Contains('@') && string.IsNullOrWhiteSpace(domain))
@@ -442,9 +503,10 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// Получава всички активни сесии (за debugging)
+    /// Получава всички активни сесии (само за Admin)
     /// </summary>
     [HttpGet("sessions/debug")]
+    [Authorize(Roles = "Admin")]
     public IActionResult GetAllSessions()
     {
         try

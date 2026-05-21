@@ -1,0 +1,794 @@
+@using ADS.WindowsAuth.Core.Data.Entities
+@{
+    Layout = "_Layout";
+    ViewData["Title"] = "Анализ на продуктивност";
+    var users = ViewBag.Users as List<string> ?? new List<string>();
+    var machines = ViewBag.Machines as List<string> ?? new List<string>();
+    var username = ViewBag.SelectedUsername as string;
+    var machineName = ViewBag.SelectedMachine as string;
+    var dateStr = ViewBag.SelectedDate as string;
+    var dateDisplay = ViewBag.SelectedDateDisplay as string;
+    var totalSeconds = ViewBag.TotalSeconds as int? ?? 0;
+    var activeSeconds = ViewBag.ActiveSeconds as int? ?? 0;
+    var passiveSeconds = ViewBag.PassiveSeconds as int? ?? 0;
+    var productivityPercent = ViewBag.ProductivityPercent as double? ?? 0;
+    var focusBlocks = ViewBag.FocusBlocks as int? ?? 0;
+    var longestFocusSeconds = ViewBag.LongestFocusSeconds as int? ?? 0;
+    var firstActivity = ViewBag.FirstActivity as string;
+    var lastActivity = ViewBag.LastActivity as string;
+    var hourlyActive = ViewBag.HourlyActive as int[] ?? new int[24];
+    var hourlyPassive = ViewBag.HourlyPassive as int[] ?? new int[24];
+    var topApps = ViewBag.TopApps as List<(string App, int Minutes)> ?? new List<(string, int)>();
+    var allApplications = ViewBag.AllApplications as List<(string App, int Minutes, int Sessions)> ?? new List<(string, int, int)>();
+    var visitedWebsites = ViewBag.VisitedWebsites as List<VisitedWebsiteEntity> ?? new List<VisitedWebsiteEntity>();
+    var hasData = ViewBag.HasData as bool? ?? false;
+    var inputLogsCountForUserAndDay = ViewBag.InputLogsCountForUserAndDay as int? ?? 0;
+
+    string FormatDuration(int seconds)
+    {
+        var h = seconds / 3600;
+        var m = (seconds % 3600) / 60;
+        return h > 0 ? $"{h}ч {m}м" : $"{m}м";
+    }
+}
+
+<style>
+    :root {
+        --primary-bg: #f8f9fa;
+        --card-bg: #ffffff;
+        --text-main: #2c3e50;
+        --text-muted: #95a5a6;
+        --accent-purple: #7b61ff;
+        --accent-purple-light: #f0edff;
+        --accent-green: #2ecc71;
+        --accent-green-light: #eafaf1;
+        --accent-yellow: #f1c40f;
+        --accent-yellow-light: #fef9e7;
+        --accent-orange: #e67e22;
+        --accent-orange-light: #fdf2e9;
+        --accent-blue: #3498db;
+        --accent-blue-light: #ebf5fb;
+        --dark-bar: #1c1c38;
+        --border-radius: 12px;
+        --shadow-sm: 0 2px 10px rgba(0,0,0,0.03);
+    }
+
+    body {
+        background-color: var(--primary-bg);
+        color: var(--text-main);
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    /* Top Navigation Area */
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+
+    .page-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .page-title i {
+        color: var(--accent-purple);
+    }
+
+    .date-badge {
+        background-color: var(--accent-purple-light);
+        color: var(--accent-purple);
+        font-size: 0.85rem;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-weight: 600;
+    }
+
+    /* Filter Form */
+    .filter-card {
+        background: var(--card-bg);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-sm);
+        padding: 12px 20px;
+        margin-bottom: 24px;
+        border: none;
+    }
+
+    /* Stat Cards */
+    .stat-card {
+        background: var(--card-bg);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-sm);
+        padding: 20px;
+        height: 100%;
+        border: none;
+        position: relative;
+        overflow: hidden;
+        transition: transform 0.2s;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-2px);
+    }
+
+    .stat-card::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+    }
+
+    .stat-card.purple::before { background-color: var(--accent-purple); }
+    .stat-card.green::before { background-color: var(--accent-green); }
+    .stat-card.yellow::before { background-color: var(--accent-yellow); }
+    .stat-card.orange::before { background-color: var(--accent-orange); }
+    .stat-card.blue::before { background-color: var(--accent-blue); }
+
+    .stat-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        margin-bottom: 12px;
+    }
+
+    .stat-icon.purple { background-color: var(--accent-purple-light); color: var(--accent-purple); }
+    .stat-icon.green { background-color: var(--accent-green-light); color: var(--accent-green); }
+    .stat-icon.yellow { background-color: var(--accent-yellow-light); color: var(--accent-yellow); }
+    .stat-icon.orange { background-color: var(--accent-orange-light); color: var(--accent-orange); }
+    .stat-icon.blue { background-color: var(--accent-blue-light); color: var(--accent-blue); }
+
+    .stat-title {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text-muted);
+        font-weight: 700;
+        margin-bottom: 4px;
+    }
+
+    .stat-value {
+        font-size: 1.8rem;
+        font-weight: 800;
+        color: var(--text-main);
+        margin-bottom: 4px;
+        line-height: 1.2;
+    }
+
+    .stat-desc {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin: 0;
+    }
+
+    /* Dark Info Bar */
+    .dark-info-bar {
+        background-color: var(--dark-bar);
+        border-radius: var(--border-radius);
+        color: white;
+        padding: 16px 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 24px;
+    }
+
+    .dark-info-item {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .dark-info-label {
+        font-size: 0.7rem;
+        color: rgba(255,255,255,0.6);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 4px;
+    }
+
+    .dark-info-value {
+        font-size: 1.1rem;
+        font-weight: 600;
+    }
+
+    .user-avatar-placeholder {
+        width: 48px;
+        height: 48px;
+        border-radius: 8px;
+        background-color: rgba(255,255,255,0.1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        margin-right: 16px;
+    }
+
+    /* Charts & Tables */
+    .content-card {
+        background: var(--card-bg);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-sm);
+        padding: 20px;
+        margin-bottom: 24px;
+        border: none;
+        height: 100%;
+    }
+
+    .content-card-title {
+        font-size: 1rem;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 4px;
+    }
+
+    .content-card-subtitle {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        margin-bottom: 20px;
+    }
+
+    /* Custom Table for Apps */
+    .app-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0 8px;
+    }
+
+    .app-table th {
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        font-weight: 600;
+        padding: 8px 12px;
+        border-bottom: 1px solid #eee;
+    }
+
+    .app-table td {
+        padding: 12px;
+        vertical-align: middle;
+        font-size: 0.9rem;
+    }
+
+    .rank-badge {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 0.8rem;
+    }
+
+    .rank-1 { background-color: var(--accent-yellow-light); color: #d4ac0d; }
+    .rank-2 { background-color: var(--accent-blue-light); color: var(--accent-blue); }
+    .rank-3 { background-color: #fdf2e9; color: #d35400; }
+    .rank-other { background-color: #f8f9fa; color: var(--text-muted); }
+
+    .app-name-cell {
+        font-weight: 500;
+        color: var(--text-main);
+    }
+
+    .app-minutes {
+        font-weight: 700;
+    }
+
+    .custom-progress {
+        height: 8px;
+        border-radius: 4px;
+        background-color: var(--primary-bg);
+        overflow: hidden;
+    }
+
+    .custom-progress-bar {
+        height: 100%;
+        background-color: var(--accent-purple);
+        border-radius: 4px;
+    }
+
+    /* Custom colors for progress bars based on rank */
+    tr:nth-child(1) .custom-progress-bar { background-color: var(--accent-purple); }
+    tr:nth-child(2) .custom-progress-bar { background-color: var(--accent-green); }
+    tr:nth-child(3) .custom-progress-bar { background-color: var(--accent-yellow); }
+    tr:nth-child(4) .custom-progress-bar { background-color: var(--accent-orange); }
+    tr:nth-child(5) .custom-progress-bar { background-color: var(--accent-blue); }
+
+    .btn-report {
+        background-color: var(--accent-purple);
+        color: white;
+        border: none;
+        font-weight: 600;
+    }
+
+    .btn-report:hover {
+        background-color: #6a52e0;
+        color: white;
+    }
+
+    .btn-excel {
+        background-color: var(--accent-green);
+        color: white;
+        border: none;
+        font-weight: 600;
+    }
+    
+    .btn-excel:hover {
+        background-color: #27ae60;
+        color: white;
+    }
+
+    .top-action-bar {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+    }
+</style>
+
+<div class="container-fluid px-4 py-4">
+    <!-- Header Section -->
+    <div class="page-header">
+        <div class="d-flex align-items-center gap-3">
+            <h1 class="page-title"><i class="bi bi-bar-chart-fill"></i> Анализ на продуктивност</h1>
+            @if (hasData)
+            {
+                <span class="date-badge">@dateDisplay</span>
+            }
+        </div>
+        
+        <!-- Filter Form Integrated in Header -->
+        <form method="get" action="/performance" class="m-0">
+            <div class="top-action-bar">
+                <select class="form-select form-select-sm" name="username" style="width: 200px; border-radius: 8px;">
+                    <option value="">-- Избери потребител --</option>
+                    @foreach (var u in users)
+                    {
+                        if (u == username)
+                        {
+                            <option value="@u" selected>@u</option>
+                        }
+                        else
+                        {
+                            <option value="@u">@u</option>
+                        }
+                    }
+                </select>
+                
+                <input type="date" class="form-control form-control-sm" name="dateStr" value="@dateStr" style="width: 150px; border-radius: 8px;" />
+                
+                <button type="submit" class="btn btn-sm btn-report px-3 rounded-3"><i class="bi bi-search"></i> Генерирай</button>
+                
+                @if (hasData && !string.IsNullOrEmpty(username))
+                {
+                    <a href="/performance/export?username=@Uri.EscapeDataString(username)&machineName=@(machineName ?? "")&dateStr=@dateStr" class="btn btn-sm btn-excel px-3 rounded-3">
+                        <i class="bi bi-file-earmark-excel"></i> Изтегли Excel
+                    </a>
+                }
+            </div>
+        </form>
+    </div>
+
+    @if (hasData && !string.IsNullOrEmpty(username) && username.EndsWith("$", StringComparison.Ordinal))
+    {
+        <div class="alert alert-info py-2 px-3 mb-3 small">
+            <strong>Потребител „@username“</strong> е машинен акаунт (името на компютъра). Данните за <strong>клавиши и кликове</strong> се записват под името на <strong>реалния логнат потребител</strong>, не под машинния акаунт. За да виждате въвеждане по приложения, изберете от падащия списък потребител с име без „$“ или отворете <a href="/input-logs">Въвеждане и кликове</a> и филтрирайте по дата.
+        </div>
+    }
+
+    @if (hasData)
+    {
+        <!-- Metrics Grid -->
+        <div class="row g-3 mb-4">
+            <!-- Toplam Süre -->
+            <div class="col-xl-3 col-md-6">
+                <div class="stat-card purple">
+                    <div class="stat-icon purple"><i class="bi bi-clock"></i></div>
+                    <div class="stat-title">ОБЩО ВРЕМЕ</div>
+                    <div class="stat-value">@FormatDuration(totalSeconds)</div>
+                    <div class="stat-desc">Общо записано време за деня</div>
+                </div>
+            </div>
+            
+            <!-- Net Çalışma -->
+            <div class="col-xl-3 col-md-6">
+                <div class="stat-card green">
+                    <div class="stat-icon green"><i class="bi bi-lightning-charge"></i></div>
+                    <div class="stat-title">АКТИВНО ВРЕМЕ</div>
+                    <div class="stat-value">@FormatDuration(activeSeconds)</div>
+                    <div class="stat-desc">Полезно работно време</div>
+                </div>
+            </div>
+            
+            <!-- Mola / Boşta -->
+            <div class="col-xl-3 col-md-6">
+                <div class="stat-card yellow">
+                    <div class="stat-icon yellow"><i class="bi bi-cup-hot"></i></div>
+                    <div class="stat-title">ПОЧИВКА / ПАСИВНО</div>
+                    <div class="stat-value">@FormatDuration(passiveSeconds)</div>
+                    <div class="stat-desc">Време на неактивност</div>
+                </div>
+            </div>
+            
+            <!-- Verimlilik -->
+            <div class="col-xl-3 col-md-6">
+                <div class="stat-card orange">
+                    <div class="stat-icon orange"><i class="bi bi-speedometer2"></i></div>
+                    <div class="stat-title">ПРОДУКТИВНОСТ</div>
+                    <div class="stat-value">%@productivityPercent.ToString("F2")</div>
+                    <div class="custom-progress mt-2" style="background-color: var(--accent-yellow-light);">
+                        <div class="custom-progress-bar" style="width: @Math.Min(100, productivityPercent)%; background-color: var(--accent-yellow);"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Odak Bloğu -->
+            <div class="col-xl-3 col-md-6">
+                <div class="stat-card purple">
+                    <div class="stat-icon purple"><i class="bi bi-bullseye"></i></div>
+                    <div class="stat-title">БЛОКОВЕ ФОКУС (≥25МИН.)</div>
+                    <div class="stat-value">@focusBlocks</div>
+                    <div class="stat-desc">Непрекъснати активни периоди над 25 мин.</div>
+                </div>
+            </div>
+            
+            <!-- En Uzun Odak -->
+            <div class="col-xl-3 col-md-6">
+                <div class="stat-card blue">
+                    <div class="stat-icon blue"><i class="bi bi-stopwatch"></i></div>
+                    <div class="stat-title">НАЙ-ДЪЛЪГ ФОКУС</div>
+                    <div class="stat-value">@(longestFocusSeconds / 60) мин.</div>
+                    <div class="stat-desc">Най-дълъг единичен активен блок</div>
+                </div>
+            </div>
+            
+            <!-- İlk Aktivite -->
+            <div class="col-xl-3 col-md-6">
+                <div class="stat-card blue">
+                    <div class="stat-icon blue"><i class="bi bi-sunrise"></i></div>
+                    <div class="stat-title">ПЪРВА АКТИВНОСТ</div>
+                    <div class="stat-value">@(firstActivity ?? "-")</div>
+                    <div class="stat-desc">Начало на деня</div>
+                </div>
+            </div>
+            
+            <!-- Последна Активност -->
+            <div class="col-xl-3 col-md-6">
+                <div class="stat-card purple">
+                    <div class="stat-icon purple"><i class="bi bi-sunset"></i></div>
+                    <div class="stat-title">ПОСЛЕДНА АКТИВНОСТ</div>
+                    <div class="stat-value">@(lastActivity ?? "-")</div>
+                    <div class="stat-desc">Край на деня</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dark Blue Info Bar -->
+        <div class="dark-info-bar">
+            <div class="d-flex align-items-center">
+                <div class="user-avatar-placeholder">
+                    <i class="bi bi-person-video2"></i>
+                </div>
+                <div class="dark-info-item">
+                    <span class="dark-info-label">ПОТРЕБИТЕЛ</span>
+                    <span class="dark-info-value">@username</span>
+                </div>
+            </div>
+            
+            <div class="dark-info-item">
+                <span class="dark-info-label">ДАТА НА ОТЧЕТА</span>
+                <span class="dark-info-value">@dateDisplay</span>
+            </div>
+            
+            <div class="dark-info-item">
+                <span class="dark-info-label">РАБОТНИ ЧАСОВЕ</span>
+                <span class="dark-info-value">@(firstActivity ?? "-") – @(lastActivity ?? "-")</span>
+            </div>
+            
+            <div class="dark-info-item text-end">
+                <span class="dark-info-label">ГЕНЕРИРАН НА</span>
+                <span class="dark-info-value" style="font-size: 0.9rem;">@DateTime.Now.ToString("dd.MM.yyyy HH:mm")</span>
+            </div>
+        </div>
+
+        <!-- Клавиши и кликове – видима секция с линк -->
+        <div class="content-card mb-4" style="border-left: 4px solid var(--accent-purple);">
+            <div class="content-card-title"><i class="bi bi-keyboard text-muted"></i> Клавиши и кликове (писанене, кликване)</div>
+            <div class="content-card-subtitle">Записи от input capture – какво е въвеждано и къде е кликнато в приложенията за избрания ден.</div>
+            <div class="d-flex align-items-center flex-wrap gap-3 mt-3">
+                @if (!string.IsNullOrEmpty(username))
+                {
+                    var inputLogsUrl = $"/input-logs?username={Uri.EscapeDataString(username)}&dateFrom={Uri.EscapeDataString(dateStr ?? "")}&dateTo={Uri.EscapeDataString(dateStr ?? "")}";
+                    if (!string.IsNullOrEmpty(machineName)) { inputLogsUrl += "&machineName=" + Uri.EscapeDataString(machineName); }
+                    <a href="@inputLogsUrl" class="btn btn-report px-4 py-2 rounded-3">
+                        <i class="bi bi-keyboard"></i> Виж клавиши и кликове за @username
+                    </a>
+                    <span class="text-muted">
+                        @if (inputLogsCountForUserAndDay > 0)
+                        {
+                            <text><strong>@inputLogsCountForUserAndDay</strong> записа за този ден.</text>
+                        }
+                        else
+                        {
+                            <text>Няма записи за този ден – стартирайте Client на машината на потребителя, за да се изпращат данни.</text>
+                        }
+                    </span>
+                }
+                else
+                {
+                    <a href="/input-logs" class="btn btn-outline-primary px-4 py-2 rounded-3"><i class="bi bi-keyboard"></i> Всички записи за клавиши и кликове</a>
+                    <span class="text-muted">Изберете потребител горе и генерирайте отчета, за да виждате линк за неговите записи.</span>
+                }
+            </div>
+        </div>
+
+        <!-- Charts Row -->
+        <div class="row g-4 mb-4">
+            <!-- Doughnut Chart -->
+            <div class="col-lg-4">
+                <div class="content-card">
+                    <div class="content-card-title"><i class="bi bi-pie-chart text-muted"></i> Разпределение Активно / Пасивно</div>
+                    <div class="content-card-subtitle">Съотношение между активно и пасивно време за деня</div>
+                    <div style="height: 250px; display: flex; justify-content: center;">
+                        <canvas id="donutChart"></canvas>
+                    </div>
+                    <div class="d-flex justify-content-center gap-3 mt-3">
+                        <div class="d-flex align-items-center gap-2">
+                            <span style="width:12px; height:12px; border-radius:3px; background-color: var(--accent-green);"></span>
+                            <span class="small fw-bold">Активно (@(activeSeconds/60) мин.)</span>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <span style="width:12px; height:12px; border-radius:3px; background-color: var(--primary-bg);"></span>
+                            <span class="small fw-bold">Пасивно (@(passiveSeconds/60) мин.)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Bar Chart -->
+            <div class="col-lg-8">
+                <div class="content-card">
+                    <div class="content-card-title"><i class="bi bi-bar-chart-line text-muted"></i> Почасово разпределение на активността</div>
+                    <div class="content-card-subtitle">Разпределение на активните и пасивните минути по часове</div>
+                    <div style="height: 280px;">
+                        <canvas id="hourlyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Applications Table -->
+        <div class="content-card mb-5">
+            <div class="content-card-title"><i class="bi bi-collection text-muted"></i> Най-често използвани приложения – Топ 10</div>
+            <div class="content-card-subtitle">Сортирани по активни минути</div>
+            
+            @if (topApps.Any())
+            {
+                <table class="app-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 60px;">#</th>
+                            <th>ПРИЛОЖЕНИЕ</th>
+                            <th style="width: 120px;">МИНУТИ</th>
+                            <th style="width: 150px;">ДЯЛ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @{
+                            var maxMin = topApps.Any() ? topApps.Max(x => x.Minutes) : 1;
+                        }
+                        @for (int i = 0; i < topApps.Count; i++)
+                        {
+                            var item = topApps[i];
+                            var pct = maxMin > 0 ? (item.Minutes * 100.0 / maxMin) : 0;
+                            var rankClass = i == 0 ? "rank-1" : (i == 1 ? "rank-2" : (i == 2 ? "rank-3" : "rank-other"));
+                            
+                            <tr>
+                                <td>
+                                    <div class="rank-badge @rankClass">@(i + 1)</div>
+                                </td>
+                                <td class="app-name-cell">
+                                    <span title="@item.App">@(item.App.Length > 60 ? item.App.Substring(0, 57) + "..." : item.App)</span>
+                                </td>
+                                <td class="app-minutes">@item.Minutes</td>
+                                <td>
+                                    <div class="custom-progress">
+                                        <div class="custom-progress-bar" style="width: @pct%;"></div>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            else
+            {
+                <div class="text-center py-4 text-muted">
+                    <i class="bi bi-info-circle fs-3 mb-2 d-block"></i>
+                    Няма данни за приложения за избрания период.
+                </div>
+            }
+        </div>
+
+        <!-- Всички Windows програми – пълен списък (следи всичко) -->
+        <div class="content-card mb-5">
+            <div class="content-card-title"><i class="bi bi-windows text-muted"></i> Всички Windows програми</div>
+            <div class="content-card-subtitle">Пълен списък с всички отворени приложения за деня – данните идват от Monitor (application start/stop).</div>
+            @if (allApplications.Any())
+            {
+                <div class="table-responsive">
+                    <table class="app-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 50px;">#</th>
+                                <th>ПРИЛОЖЕНИЕ</th>
+                                <th style="width: 100px;">МИНУТИ</th>
+                                <th style="width: 100px;">СЕСИИ</th>
+                                <th style="width: 150px;">ДЯЛ</th>
+                                <th style="width: 160px;">ДЕЙНОСТИ</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{
+                                var totalMinAll = allApplications.Sum(x => x.Minutes);
+                                var maxMinAll = allApplications.Any() ? allApplications.Max(x => x.Minutes) : 1;
+                                var perfUsername = Uri.EscapeDataString(username ?? "");
+                                var perfMachine = Uri.EscapeDataString(machineName ?? "");
+                                var perfDate = Uri.EscapeDataString(dateStr ?? "");
+                            }
+                            @for (int i = 0; i < allApplications.Count; i++)
+                            {
+                                var item = allApplications[i];
+                                var pct = maxMinAll > 0 ? (item.Minutes * 100.0 / maxMinAll) : 0;
+                                var rankClass = i == 0 ? "rank-1" : (i == 1 ? "rank-2" : (i == 2 ? "rank-3" : "rank-other"));
+                                var appEnc = Uri.EscapeDataString(item.App);
+                                var appActivityUrl = $"/performance/app-activity?username={perfUsername}&app={appEnc}&machineName={perfMachine}&dateStr={perfDate}";
+                                <tr>
+                                    <td><div class="rank-badge @rankClass">@(i + 1)</div></td>
+                                    <td class="app-name-cell" title="@item.App">@(item.App.Length > 55 ? item.App.Substring(0, 52) + "…" : item.App)</td>
+                                    <td class="app-minutes">@item.Minutes</td>
+                                    <td>@item.Sessions</td>
+                                    <td>
+                                        <div class="custom-progress">
+                                            <div class="custom-progress-bar" style="width: @Math.Min(100, pct)%;"></div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <a href="@appActivityUrl" class="btn btn-sm btn-outline-primary" title="Виж клавиши и кликове в това приложение">⌨️ Виж</a>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <p class="small text-muted mt-2 mb-0">Общо @allApplications.Count приложения, @totalMinAll мин. активно време.</p>
+            }
+            else
+            {
+                <div class="text-center py-4 text-muted">
+                    <i class="bi bi-windows fs-3 mb-2 d-block"></i>
+                    Няма записани приложения за този ден. Уверете се, че Monitor услугата работи и изпраща application start/stop към API.
+                </div>
+            }
+        </div>
+
+        <!-- Посетени уебсайтове -->
+        <div class="content-card mb-5">
+            <div class="content-card-title"><i class="bi bi-globe text-muted"></i> Посетени уебсайтове</div>
+            <div class="content-card-subtitle">URL-и и заглавия на страници за избрания ден. Данните се записват от browser extension или от бъдещо обновяване на Monitor.</div>
+            @if (visitedWebsites.Any())
+            {
+                <table class="app-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 140px;">ВРЕМЕ</th>
+                            <th>URL / Заглавие</th>
+                            <th style="width: 90px;">БРАУЗЪР</th>
+                            <th style="width: 80px;">ПРОДЪЛЖ.</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var v in visitedWebsites)
+                        {
+                            <tr>
+                                <td><small>@v.VisitedAt.ToString("HH:mm:ss")</small></td>
+                                <td class="app-name-cell">
+                                    <a href="@v.Url" target="_blank" rel="noopener noreferrer" class="text-decoration-none" title="@v.Url">@(string.IsNullOrEmpty(v.Title) ? (v.Url.Length > 60 ? v.Url.Substring(0, 57) + "…" : v.Url) : (v.Title.Length > 60 ? v.Title.Substring(0, 57) + "…" : v.Title))</a>
+                                </td>
+                                <td><span class="badge bg-secondary">@v.Browser</span></td>
+                                <td>@(v.DurationSeconds / 60) мин</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            else
+            {
+                <div class="text-center py-4 text-muted">
+                    <i class="bi bi-globe fs-3 mb-2 d-block"></i>
+                    Няма записани посещения за този ден. За да се появят данни, инсталирайте browser extension (Chrome/Edge), който изпраща текущия таб към API, или изчакайте бъдеща поддръжка в Monitor.
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="content-card text-center py-5 mt-4">
+            <i class="bi bi-search fs-1 text-muted mb-3 d-block"></i>
+            @if (string.IsNullOrEmpty(username))
+            {
+                <h5 class="fw-bold">Филтрирайте данните за показване на отчет</h5>
+                <p class="text-muted">Моля, изберете потребител и дата от менюто горе и натиснете бутона "Генерирай".</p>
+            }
+            else
+            {
+                <h5 class="fw-bold">Няма намерени данни за @username</h5>
+                <p class="text-muted">Няма данни за активност за дата @dateDisplay.<br/>Уверете се, че мониторът работи.</p>
+            }
+        </div>
+    }
+</div>
+
+@section Scripts {
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+@if (hasData)
+{
+    <text>
+    const hourlyCtx = document.getElementById('hourlyChart');
+    if (hourlyCtx) {
+        new Chart(hourlyCtx, {
+            type: 'bar',
+            data: {
+                labels: [@Html.Raw(string.Join(",", Enumerable.Range(0, 24).Select(i => $"\"{i}:00\"")))],
+                datasets: [
+                    { label: 'Активно', data: [@string.Join(",", hourlyActive)], backgroundColor: '#7b61ff', borderRadius: 4 },
+                    { label: 'Пасивно', data: [@string.Join(",", hourlyPassive)], backgroundColor: '#f8f9fa', borderRadius: 4 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { stacked: true, grid: { display: false } },
+                    y: { stacked: true, grid: { borderDash: [5, 5] }, title: { display: true, text: 'Dakika', color: '#95a5a6' } }
+                },
+                plugins: { legend: { position: 'top', labels: { usePointStyle: true, boxWidth: 8 } } }
+            }
+        });
+    }
+    const donutCtx = document.getElementById('donutChart');
+    if (donutCtx) {
+        new Chart(donutCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Активно', 'Пасивно'],
+                datasets: [{
+                    data: [@activeSeconds, @passiveSeconds],
+                    backgroundColor: ['#2ecc71', '#f8f9fa'],
+                    borderWidth: 0,
+                    cutout: '75%'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } }
+            }
+        });
+    }
+    </text>
+}
+</script>
+}

@@ -18,6 +18,13 @@ public class MonitorConfigurationEntity
     public int ConnectionTimeout { get; set; } = 30;
     public int RetryInterval { get; set; } = 60;
     public int MaxRetries { get; set; } = 3;
+
+    /// <summary>Дали да се правят скрийншотове на екрана (по избор)</summary>
+    public bool ScreenshotEnabled { get; set; } = false;
+
+    /// <summary>Интервал между скрийншотове в минути</summary>
+    public int ScreenshotIntervalMinutes { get; set; } = 5;
+
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
 }

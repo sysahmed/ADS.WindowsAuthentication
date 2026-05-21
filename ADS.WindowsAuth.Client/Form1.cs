@@ -14,6 +14,8 @@ public partial class Form1 : Form
     private readonly ILoggerService _logger;
     private readonly CredentialProviderInstallerService _installerService;
     private readonly MonitorInstallerService _monitorInstallerService;
+    private readonly RemoteDesktopInstallerService _rdInstallerService;
+    private readonly string _apiUrl;
     private AuthSession? _currentSession;
     private string _applicationDirectory;
     private LockScreenQrForm? _lockScreenForm;
@@ -23,19 +25,18 @@ public partial class Form1 : Form
         InitializeComponent();
         
         _applicationDirectory = Application.StartupPath;
+        _apiUrl = LoadApiUrlFromConfig();
         _logger = new LoggerService(_applicationDirectory);
         _qrCodeService = new QrCodeService();
         _installerService = new CredentialProviderInstallerService(_logger);
         _monitorInstallerService = new MonitorInstallerService(_logger);
-        
-        // Зареждане на API URL от конфигурация
-        string apiUrl = LoadApiUrlFromConfig();
-        _apiClient = new ApiClient(apiUrl, _logger);
+        _rdInstallerService = new RemoteDesktopInstallerService(_logger);
+        _apiClient = new ApiClient(_apiUrl, _logger);
         
         // Слушане за промени в сесията (lock/unlock)
         SystemEvents.SessionSwitch += SystemEvents_SessionSwitch;
         
-        _logger.LogInfo($"Windows Authentication Client стартиран. API URL: {apiUrl}");
+        _logger.LogInfo($"Windows Authentication Client стартиран. API URL: {_apiUrl}");
     }
 
     /// <summary>
@@ -46,6 +47,7 @@ public partial class Form1 : Form
         string? url = null;
         
         // Първо проверяваме за Development конфигурация (ако е Debug режим)
+        // Забележка: не използваме _logger тук – метода се вика преди създаването му
         #if DEBUG
         try
         {
@@ -61,19 +63,13 @@ public partial class Form1 : Form
                         {
                             url = baseUrl.GetString();
                             if (!string.IsNullOrEmpty(url))
-                            {
-                                _logger.LogInfo($"Зареден API URL от Development конфигурация: {url}");
                                 return url;
-                            }
                         }
                     }
                 }
             }
         }
-        catch (Exception ex)
-        {
-            _logger.LogWarning($"Грешка при зареждане на Development конфигурация: {ex.Message}");
-        }
+        catch { /* игнорираме – ще опитаме appsettings.json */ }
         #endif
         
         // След това проверяваме основния appsettings.json
@@ -91,24 +87,16 @@ public partial class Form1 : Form
                         {
                             url = baseUrl.GetString();
                             if (!string.IsNullOrEmpty(url))
-                            {
-                                _logger.LogInfo($"Зареден API URL от конфигурация: {url}");
                                 return url;
-                            }
                         }
                     }
                 }
             }
         }
-        catch (Exception ex)
-        {
-            _logger.LogWarning($"Грешка при зареждане на конфигурация: {ex.Message}. Използвам default URL.");
-        }
+        catch { /* игнорираме – ще използваме default */ }
         
         // Default стойност - ако няма конфигурация, използваме production URL
-        string defaultUrl = "https://ads-auth.nursanbulgaria.com";
-        _logger.LogInfo($"Използвам default API URL: {defaultUrl}");
-        return defaultUrl;
+        return "https://ads-auth.nursanbulgaria.com";
     }
 
     private async void Form1_Load(object sender, EventArgs e)
@@ -313,7 +301,6 @@ public partial class Form1 : Form
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         SystemEvents.SessionSwitch -= SystemEvents_SessionSwitch;
-        
         if (_lockScreenForm != null && !_lockScreenForm.IsDisposed)
         {
             _lockScreenForm.Close();
@@ -354,13 +341,15 @@ public partial class Form1 : Form
                     {
                         Invoke(new Action(() => {
                             labelStatus.Text = "Статус: Очакване... (няма отговор)";
-                            labelStatus.ForeColor = Color.Orange;
+                            labelStatus.ForeColor = Color.White;
+                            panelStatus.BackColor = Color.FromArgb(251, 191, 36);
                         }));
                     }
                     else
                     {
                         labelStatus.Text = "Статус: Очакване... (няма отговор)";
-                        labelStatus.ForeColor = Color.Orange;
+                        labelStatus.ForeColor = Color.White;
+                        panelStatus.BackColor = Color.FromArgb(251, 191, 36);
                     }
                 }
             }
@@ -382,7 +371,8 @@ public partial class Form1 : Form
         {
             case SessionStatus.Approved:
                 labelStatus.Text = "Статус: Одобрено ✓";
-                labelStatus.ForeColor = Color.Green;
+                labelStatus.ForeColor = Color.White;
+                panelStatus.BackColor = Color.FromArgb(34, 197, 94);
                 timerStatusCheck.Stop();
                 _logger.LogInfo($"🎉 [UI] Сесия {_currentSession?.SessionId} е одобрена - показване на съобщение");
                 MessageBox.Show("Аутентикацията е успешна! Достъпът е разрешен.", "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -392,7 +382,8 @@ public partial class Form1 : Form
                 break;
             case SessionStatus.Rejected:
                 labelStatus.Text = "Статус: Отхвърлено ✗";
-                labelStatus.ForeColor = Color.Red;
+                labelStatus.ForeColor = Color.White;
+                panelStatus.BackColor = Color.FromArgb(239, 68, 68);
                 timerStatusCheck.Stop();
                 _logger.LogWarning($"❌ [UI] Сесия {_currentSession?.SessionId} е отхвърлена - показване на съобщение");
                 MessageBox.Show("Аутентикацията е отхвърлена.", "Отхвърлено", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -402,7 +393,8 @@ public partial class Form1 : Form
                 break;
             case SessionStatus.Expired:
                 labelStatus.Text = "Статус: Изтекла";
-                labelStatus.ForeColor = Color.Gray;
+                labelStatus.ForeColor = Color.FromArgb(156, 163, 175);
+                panelStatus.BackColor = Color.FromArgb(156, 163, 175);
                 timerStatusCheck.Stop();
                 _logger.LogWarning($"⏰ [UI] Сесия {_currentSession?.SessionId} е изтекла - създаване на нова");
                 // Създаване на нова сесия след изтичане
@@ -412,7 +404,8 @@ public partial class Form1 : Form
             case SessionStatus.Pending:
                 // Продължаваме да чакаме
                 labelStatus.Text = $"Статус: Очакване на сканиране... ({DateTime.Now:HH:mm:ss})";
-                labelStatus.ForeColor = Color.Orange;
+                labelStatus.ForeColor = Color.White;
+                panelStatus.BackColor = Color.FromArgb(251, 191, 36);
                 break;
         }
     }
@@ -425,18 +418,11 @@ public partial class Form1 : Form
 
         try
         {
-            // Проверка за администраторски права
+            // Ако не е admin – рестартираме с UAC elevation
             if (!_installerService.IsRunningAsAdministrator())
             {
-                MessageBox.Show(
-                    "Приложението трябва да се стартира като администратор за инсталация!\n\n" +
-                    "Моля, рестартирай приложението с администраторски права (десен бутон -> Run as administrator).",
-                    "Нужни са администраторски права",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
-                labelStatus.Text = "Статус: Нужни са администраторски права";
-                labelStatus.ForeColor = Color.Red;
                 buttonInstallCredentialProvider.Enabled = true;
+                ElevateAndExit();
                 return;
             }
 
@@ -751,18 +737,11 @@ public partial class Form1 : Form
 
         try
         {
-            // Проверка за администраторски права
+            // Ако не е admin – рестартираме с UAC elevation
             if (!_monitorInstallerService.IsRunningAsAdministrator())
             {
-                MessageBox.Show(
-                    "Приложението трябва да се стартира като администратор за инсталация!\n\n" +
-                    "Моля, рестартирай приложението с администраторски права (десен бутон -> Run as administrator).",
-                    "Нужни са администраторски права",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
-                labelStatus.Text = "Статус: Нужни са администраторски права";
-                labelStatus.ForeColor = Color.Red;
                 buttonInstallMonitor.Enabled = true;
+                ElevateAndExit();
                 return;
             }
 
@@ -893,6 +872,114 @@ public partial class Form1 : Form
         finally
         {
             buttonInstallMonitor.Enabled = true;
+        }
+    }
+
+    private async void ButtonInstallRemoteDesktop_Click(object sender, EventArgs e)
+    {
+        buttonInstallRemoteDesktop.Enabled = false;
+        labelStatus.Text = "Статус: Инсталиране на Remote Desktop Host...";
+        labelStatus.ForeColor = Color.Blue;
+
+        try
+        {
+            if (!_rdInstallerService.IsRunningAsAdministrator())
+            {
+                buttonInstallRemoteDesktop.Enabled = true;
+                ElevateAndExit();
+                return;
+            }
+
+            bool isInstalled = _rdInstallerService.IsInstalled();
+            if (isInstalled)
+            {
+                var answer = MessageBox.Show(
+                    "RemoteDesktopHost вече е инсталиран.\n\nИскаш ли да го обновиш?",
+                    "Обновяване",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+                if (answer != DialogResult.Yes)
+                {
+                    labelStatus.Text = "Статус: Отменено";
+                    labelStatus.ForeColor = Color.Orange;
+                    buttonInstallRemoteDesktop.Enabled = true;
+                    return;
+                }
+            }
+
+            string? exePath = _rdInstallerService.FindExe();
+            if (string.IsNullOrEmpty(exePath))
+            {
+                using var dialog = new OpenFileDialog
+                {
+                    Filter = "EXE Files (*.exe)|*.exe",
+                    Title = "Избери ADS.WindowsAuth.RemoteDesktopHost.exe",
+                    FileName = "ADS.WindowsAuth.RemoteDesktopHost.exe"
+                };
+                if (dialog.ShowDialog() == DialogResult.OK)
+                    exePath = dialog.FileName;
+                else
+                {
+                    labelStatus.Text = "Статус: Отменено";
+                    labelStatus.ForeColor = Color.Orange;
+                    buttonInstallRemoteDesktop.Enabled = true;
+                    return;
+                }
+            }
+
+            InstallResult result = await _rdInstallerService.InstallAsync(exePath);
+
+            if (result.Success)
+            {
+                MessageBox.Show(result.Message, "Инсталация успешна", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                labelStatus.Text = "Статус: Remote Desktop инсталиран!";
+                labelStatus.ForeColor = Color.Green;
+            }
+            else
+            {
+                MessageBox.Show(result.Message, "Грешка при инсталация", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                labelStatus.Text = "Статус: Грешка при инсталация";
+                labelStatus.ForeColor = Color.Red;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Грешка при инсталация на RemoteDesktopHost", ex);
+            MessageBox.Show($"Грешка: {ex.Message}", "Грешка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            labelStatus.Text = "Статус: Грешка";
+            labelStatus.ForeColor = Color.Red;
+        }
+        finally
+        {
+            buttonInstallRemoteDesktop.Enabled = true;
+        }
+    }
+
+    /// <summary>
+    /// Ако приложението не е стартирано като Administrator, рестартира го с UAC elevation (runas).
+    /// Текущата инстанция се затваря.
+    /// </summary>
+    private static void ElevateAndExit()
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = Application.ExecutablePath,
+                UseShellExecute = true,
+                Verb = "runas"   // UAC диалог
+            };
+            System.Diagnostics.Process.Start(psi);
+            Application.Exit();
+        }
+        catch
+        {
+            // Потребителят е натиснал "Не" на UAC диалога
+            MessageBox.Show(
+                "Трябва да одобриш административните права за инсталация.",
+                "Нужни са администраторски права",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
         }
     }
 }

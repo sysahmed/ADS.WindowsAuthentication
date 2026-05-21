@@ -66,10 +66,40 @@ public interface IDatabaseService
     /// Записва Login Event
     /// </summary>
     Task<int> SaveLoginEventAsync(LoginEventEntity entity);
+
+    /// <summary>
+    /// Записва Email Activity (получен/изпратен/отговорен имейл от Outlook)
+    /// </summary>
+    Task<int> SaveEmailActivityAsync(EmailActivityEntity entity);
+
+    /// <summary>
+    /// Записва посещение на уебсайт (от Monitor или browser extension)
+    /// </summary>
+    Task<int> SaveVisitedWebsiteAsync(VisitedWebsiteEntity entity);
     
     /// <summary>
     /// Получава активни Auth сесии от базата данни
     /// </summary>
     Task<List<AuthSessionEntity>> GetActiveAuthSessionsAsync();
+
+    /// <summary>
+    /// Получава всички политики от базата данни
+    /// </summary>
+    Task<List<PolicyEntity>> GetAllPoliciesAsync();
+
+    /// <summary>
+    /// Записва нова политика
+    /// </summary>
+    Task<int> SavePolicyAsync(PolicyEntity entity);
+
+    /// <summary>
+    /// Обновява съществуваща политика
+    /// </summary>
+    Task UpdatePolicyAsync(PolicyEntity entity);
+
+    /// <summary>
+    /// Изтрива политика
+    /// </summary>
+    Task DeletePolicyAsync(int id);
 }
 

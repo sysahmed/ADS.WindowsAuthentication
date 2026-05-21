@@ -12,11 +12,26 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
     <PackageReference Include="System.Diagnostics.EventLog" Version="8.0.1" />
     <PackageReference Include="System.Management" Version="8.0.0" />
+    <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="8.0.11" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\ADS.WindowsAuth.Core\ADS.WindowsAuth.Core.csproj" />
+    <ProjectReference Include="..\ADS.WindowsAuth.RemoteDesktopHost\ADS.WindowsAuth.RemoteDesktopHost.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
+
+  <!-- RemoteDesktopHost (InputCapture, screen capture) – Monitor го стартира в потребителска сесия -->
+  <Target Name="CopyRemoteDesktopHost" AfterTargets="Build">
+    <PropertyGroup>
+      <RdHostOutputPath>$(ProjectDir)..\ADS.WindowsAuth.RemoteDesktopHost\bin\$(Configuration)\$(TargetFramework)\</RdHostOutputPath>
+    </PropertyGroup>
+    <ItemGroup>
+      <RdHostFiles Include="$(RdHostOutputPath)**\*.*" Condition="Exists('$(RdHostOutputPath)ADS.WindowsAuth.RemoteDesktopHost.exe')" />
+    </ItemGroup>
+    <MakeDir Directories="$(OutputPath)RemoteDesktopHost" Condition="Exists('$(RdHostOutputPath)ADS.WindowsAuth.RemoteDesktopHost.exe')" />
+    <Copy SourceFiles="@(RdHostFiles)" DestinationFiles="@(RdHostFiles->'$(OutputPath)RemoteDesktopHost\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" Condition="Exists('$(RdHostOutputPath)ADS.WindowsAuth.RemoteDesktopHost.exe')" />
+  </Target>
 
   <!--
     Избягваме конфликт при publish на Client-а:

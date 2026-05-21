@@ -1,0 +1,11 @@
+Това е placeholder файл.
+За production, създайте икони:
+- icon-192.png (192x192 пиксела)
+- icon-512.png (512x512 пиксела)
+
+Можете да използвате онлайн инструменти като:
+- https://realfavicongenerator.net/
+- https://www.pwabuilder.com/imageGenerator
+
+Или да генерирате с помощта на инструменти като ImageMagick или Photoshop.
+

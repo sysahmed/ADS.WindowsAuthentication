@@ -17,6 +17,10 @@ public class PolicyEntity
     public int MaxScreenTimeSeconds { get; set; }
     public string AllowedInstallationsJson { get; set; } = "[]"; // JSON масив от string
     public string BlockedInstallationsJson { get; set; } = "[]"; // JSON масив от string
+    public string AllowedApplicationsJson { get; set; } = "[]"; // Whitelist на приложения
+    public bool AppWhitelistMode { get; set; } = false;          // true = блокира всичко освен whitelist
+    public string AllowedWebsitesJson { get; set; } = "[]";      // Whitelist на сайтове
+    public bool WebWhitelistMode { get; set; } = false;          // true = блокира всичко освен whitelist
     public bool BlockUsbAccess { get; set; }
     public bool BlockPrinterAccess { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.Now;

@@ -197,7 +197,8 @@ ActiveDirectorySettings adSettings = new ActiveDirectorySettings
 // Създаване на сервиси
 IActivityMonitorService activityMonitorService = new ActivityMonitorService(loggerService);
 IPolicyService policyService = new PolicyService(loggerService);
-IConnectionService connectionService = new ConnectionService(serviceConfig, loggerService);
+IOfflineEventBuffer offlineEventBuffer = new OfflineEventBuffer(serviceConfig, loggerService);
+IConnectionService connectionService = new ConnectionService(serviceConfig, loggerService, offlineEventBuffer);
 IWindowsFirewallService firewallService = new WindowsFirewallService(loggerService);
 
 // Конфигуриране като Windows Service
@@ -210,6 +211,7 @@ builder.Services.AddWindowsService(options =>
 builder.Services.AddSingleton<ILoggerService>(loggerService);
 builder.Services.AddSingleton<IActivityMonitorService>(activityMonitorService);
 builder.Services.AddSingleton<IPolicyService>(policyService);
+builder.Services.AddSingleton<IOfflineEventBuffer>(offlineEventBuffer);
 builder.Services.AddSingleton<IConnectionService>(connectionService);
 builder.Services.AddSingleton<IWindowsFirewallService>(firewallService);
 builder.Services.AddSingleton<ServiceConfiguration>(serviceConfig);

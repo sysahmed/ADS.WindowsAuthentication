@@ -468,174 +468,132 @@ IFACEMETHODIMP Credential::GetSerialization(
                 return S_OK;
             }
             
-            // Използваме CredPackAuthenticationBufferW за да създадем authentication buffer
-            // с username и password за автоматичен login
-            ULONG authBufferSize = 0;
-            BYTE* authBuffer = NULL;
-            BOOL result = FALSE;
-            DWORD lastError = 0;
-            
-            // За домейн логин форматираме username като "domain\username"
-            std::wstring domainUsername = approvedDomain + L"\\" + approvedUsername;
-            LogCredentialDebug(L"Username: " + approvedUsername + L", Domain: " + approvedDomain + L", DomainUsername: " + domainUsername + L", Password length: " + std::to_wstring(approvedPassword.length()));
-            
-            // Създаваме копия на низовете в променяеми буфери (CredPackAuthenticationBufferW изисква non-const)
-            std::vector<WCHAR> usernameBuffer(domainUsername.begin(), domainUsername.end());
-            usernameBuffer.push_back(L'\0');
-            
-            std::vector<WCHAR> passwordBuffer(approvedPassword.begin(), approvedPassword.end());
-            passwordBuffer.push_back(L'\0');
-            
-            LogCredentialDebug(L"Calling CredPackAuthenticationBufferW with CRED_PACK_PROTECTED_CREDENTIALS to get buffer size...");
-
-            // Първо получаваме размера на буфера
-            // ВАЖНО: За домейн логин използваме CRED_PACK_PROTECTED_CREDENTIALS (Kerberos/NTLM формат)
-            // CRED_PACK_GENERIC_CREDENTIALS дава "The parameter is incorrect" при Windows domain logon
-            result = CredPackAuthenticationBufferW(CRED_PACK_PROTECTED_CREDENTIALS,
-                usernameBuffer.data(), passwordBuffer.data(), NULL, &authBufferSize);
-            
-            lastError = GetLastError();
-            LogCredentialDebug(L"CredPackAuthenticationBufferW (get size) returned: " + std::to_wstring(result) + L", buffer size: " + std::to_wstring(authBufferSize) + L", last error: " + std::to_wstring(lastError));
-            
-            // ПРОБЛЕМ: ERROR_INSUFFICIENT_BUFFER (122) е нормално поведение при първото извикване
-            // но кодът не прави правилна проверка
-            if (lastError == ERROR_INSUFFICIENT_BUFFER && authBufferSize > 0)
+            // Вземаме LSA authentication package ID за Negotiate
+            ULONG ulAuthPackage = 0;
             {
-                // Запазваме оригиналния размер преди второто извикване
-                ULONG originalBufferSize = authBufferSize;
-                
-                // Заделяме памет за буфера
-                authBuffer = (BYTE*)CoTaskMemAlloc(authBufferSize);
-                if (authBuffer)
+                HANDLE hLsa = NULL;
+                NTSTATUS lsaStatus = LsaConnectUntrusted(&hLsa);
+                LogCredentialDebug(L"LsaConnectUntrusted status: 0x" + FormatHex((DWORD)lsaStatus));
+
+                if (lsaStatus == 0 && hLsa != NULL)
                 {
-                    LogCredentialDebug(L"Allocated buffer of size: " + std::to_wstring(authBufferSize));
-                    
-                    // Възстановяваме размера преди второто извикване (функцията може да го промени)
-                    authBufferSize = originalBufferSize;
-                    
-                    // Създаваме authentication buffer
-                    // ВАЖНО: За домейн логин използваме CRED_PACK_PROTECTED_CREDENTIALS
-                    ULONG actualBufferSize = authBufferSize; // Запазваме размера преди извикването
-                    if (CredPackAuthenticationBufferW(CRED_PACK_PROTECTED_CREDENTIALS,
-                        usernameBuffer.data(), passwordBuffer.data(), authBuffer, &actualBufferSize))
-                    {
-                        // Успешно създаден authentication buffer
-                        // КРИТИЧНО: Трябва да вземем правилния LSA authentication package ID!
-                        // Ако ulAuthenticationPackage е 0 (по подразбиране от ZeroMemory),
-                        // Windows ВИНАГИ дава "потребителят не е намерен" / STATUS_NO_SUCH_USER!
-                        ULONG ulAuthPackage = 0;
-                        {
-                            HANDLE hLsa = NULL;
-                            // LsaConnectUntrusted работи без специални привилегии - подходящо за Credential Providers
-                            NTSTATUS lsaStatus = LsaConnectUntrusted(&hLsa);
-                            LogCredentialDebug(L"LsaConnectUntrusted status: 0x" + FormatHex((DWORD)lsaStatus));
+                    CHAR szNegotiate[] = "Negotiate";
+                    LSA_STRING lsaPkg;
+                    lsaPkg.Buffer = szNegotiate;
+                    lsaPkg.Length = (USHORT)strlen(szNegotiate);
+                    lsaPkg.MaximumLength = lsaPkg.Length + 1;
 
-                            if (lsaStatus == 0 && hLsa != NULL) // STATUS_SUCCESS = 0
-                            {
-                                // ВАЖНО: CRED_PACK_PROTECTED_CREDENTIALS е проектиран за Negotiate (SPNEGO), НЕ за директен Kerberos!
-                                // Kerberos пакет НЕ разбира CredPack формата → STATUS_INTERNAL_ERROR (0xC00000E5)!
-                                // Negotiate автоматично избира между Kerberos (domain акаунти) и NTLM (локални акаунти).
-                                CHAR szNegotiate[] = "Negotiate";
-                                LSA_STRING lsaPkg;
-                                lsaPkg.Buffer = szNegotiate;
-                                lsaPkg.Length = (USHORT)strlen(szNegotiate);
-                                lsaPkg.MaximumLength = lsaPkg.Length + 1;
+                    NTSTATUS pkgStatus = LsaLookupAuthenticationPackage(hLsa, &lsaPkg, &ulAuthPackage);
+                    LogCredentialDebug(L"LsaLookupAuthenticationPackage (Negotiate) status: 0x" + FormatHex((DWORD)pkgStatus) + L", packageId: " + std::to_wstring(ulAuthPackage));
 
-                                NTSTATUS pkgStatus = LsaLookupAuthenticationPackage(hLsa, &lsaPkg, &ulAuthPackage);
-                                LogCredentialDebug(L"LsaLookupAuthenticationPackage (Negotiate) status: 0x" + FormatHex((DWORD)pkgStatus) + L", packageId: " + std::to_wstring(ulAuthPackage));
-
-                                if (pkgStatus != 0) // Fallback към MSV1_0 (ако Negotiate не е наличен)
-                                {
-                                    CHAR szMsv[] = "MSV1_0";
-                                    lsaPkg.Buffer = szMsv;
-                                    lsaPkg.Length = (USHORT)strlen(szMsv);
-                                    lsaPkg.MaximumLength = lsaPkg.Length + 1;
-
-                                    pkgStatus = LsaLookupAuthenticationPackage(hLsa, &lsaPkg, &ulAuthPackage);
-                                    LogCredentialDebug(L"LsaLookupAuthenticationPackage (MSV1_0) status: 0x" + FormatHex((DWORD)pkgStatus) + L", packageId: " + std::to_wstring(ulAuthPackage));
-                                }
-
-                                // Ако packageId все още е 0 след всички опити, логваме предупреждение
-                                if (ulAuthPackage == 0)
-                                {
-                                    LogCredentialDebug(L"WARNING: All packages returned packageId=0! Authentication may fail.");
-                                }
-
-                                LsaDeregisterLogonProcess(hLsa);
-                            }
-                            else
-                            {
-                                LogCredentialDebug(L"LsaConnectUntrusted FAILED - ulAuthPackage ще е 0! Логинът вероятно ще се провали.");
-                            }
-                        }
-                        LogCredentialDebug(L"Finalized ulAuthenticationPackage: " + std::to_wstring(ulAuthPackage));
-
-                        // Инициализираме структурата правилно
-                        ZeroMemory(pcpcs, sizeof(CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION));
-
-                        // ЗАБЕЛЕЖКА: clsidCredentialProvider се оставя като GUID_NULL (от ZeroMemory)
-                        // Не задаваме Windows Password CP CLSID - следваме Microsoft SampleCredentialProvider
-                        // КРИТИЧНА ПОПРАВКА: Задаваме правилния auth package - без това "потребителят не е намерен"!
-                        pcpcs->ulAuthenticationPackage = ulAuthPackage;
-                        pcpcs->rgbSerialization = authBuffer;
-                        pcpcs->cbSerialization = actualBufferSize; // Действителният размер от CredPackAuthenticationBufferW
-
-                        *pcpgsr = CPGSR_RETURN_CREDENTIAL_FINISHED;
-                        
-                        if (ppszOptionalStatusText)
-                        {
-                            std::wstring message = L"Влизане като " + approvedUsername + L"@nursan...";
-                            SHStrDupW(message.c_str(), ppszOptionalStatusText);
-                        }
-                        
-                        if (pcpsiOptionalStatusIcon)
-                        {
-                            *pcpsiOptionalStatusIcon = CPSI_SUCCESS;
-                        }
-                        
-                        LogCredentialDebug(L"Authentication buffer created successfully, attempting automatic login...");
-                        return S_OK;
-                    }
-                    else
-                    {
-                        DWORD secondCallError = GetLastError();
-                        LogCredentialDebug(L"CredPackAuthenticationBufferW failed on second call, error: " + std::to_wstring(secondCallError));
-                        
-                        CoTaskMemFree(authBuffer);
-                        authBuffer = NULL;
-                        
-                        // Fallback към ръчно въвеждане на парола
-                        LogCredentialDebug(L"Second CredPackAuthenticationBufferW failed, falling back to manual password entry");
-                    }
+                    LsaDeregisterLogonProcess(hLsa);
                 }
                 else
                 {
-                    LogCredentialDebug(L"Failed to allocate memory for authentication buffer");
+                    LogCredentialDebug(L"LsaConnectUntrusted FAILED - ще използваме package 0");
                 }
+            }
+            LogCredentialDebug(L"Finalized ulAuthenticationPackage: " + std::to_wstring(ulAuthPackage));
+            LogCredentialDebug(L"Username: " + approvedUsername + L", Domain: " + approvedDomain + L", Password length: " + std::to_wstring(approvedPassword.length()));
+
+            // Строим KERB authentication buffer ръчно (Microsoft SampleCredentialProvider pattern).
+            // CredPackAuthenticationBufferW(CRED_PACK_PROTECTED_CREDENTIALS) ВИНАГИ използва
+            // KerbInteractiveLogon (2), но за unlock сценарий е нужен KerbWorkstationUnlockLogon (7).
+            // Несъответствието причинява STATUS_INTERNAL_ERROR (0xC00000E5) в Negotiate пакета.
+            bool isUnlock = (_cpus == CPUS_UNLOCK_WORKSTATION);
+            KERB_LOGON_SUBMIT_TYPE msgType = isUnlock ? KerbWorkstationUnlockLogon : KerbInteractiveLogon;
+            LogCredentialDebug(L"Building KERB buffer for " +
+                std::wstring(isUnlock ? L"UNLOCK (KerbWorkstationUnlockLogon=7)" : L"LOGON (KerbInteractiveLogon=2)"));
+
+            USHORT domainSize   = (USHORT)(approvedDomain.length()   * sizeof(WCHAR));
+            USHORT usernameSize = (USHORT)(approvedUsername.length() * sizeof(WCHAR));
+            USHORT passwordSize = (USHORT)(approvedPassword.length() * sizeof(WCHAR));
+
+            ULONG structSize = isUnlock ? sizeof(KERB_INTERACTIVE_UNLOCK_LOGON) : sizeof(KERB_INTERACTIVE_LOGON);
+            ULONG totalSize  = structSize + domainSize + usernameSize + passwordSize;
+
+            BYTE* kerbBuffer = (BYTE*)CoTaskMemAlloc(totalSize);
+            if (kerbBuffer)
+            {
+                ZeroMemory(kerbBuffer, totalSize);
+                BYTE* pbCurrent = kerbBuffer + structSize;
+
+                KERB_INTERACTIVE_LOGON* pkil;
+                if (isUnlock)
+                    pkil = &((KERB_INTERACTIVE_UNLOCK_LOGON*)kerbBuffer)->Logon;
+                else
+                    pkil = (KERB_INTERACTIVE_LOGON*)kerbBuffer;
+
+                pkil->MessageType = msgType;
+
+                // Domain (offset-based pointer, required for Winlogon serialization)
+                if (domainSize > 0)
+                {
+                    memcpy(pbCurrent, approvedDomain.c_str(), domainSize);
+                    pkil->LogonDomainName.Buffer = (PWSTR)(ULONG_PTR)(pbCurrent - kerbBuffer);
+                    pkil->LogonDomainName.Length = domainSize;
+                    pkil->LogonDomainName.MaximumLength = domainSize;
+                    pbCurrent += domainSize;
+                }
+
+                // Username
+                if (usernameSize > 0)
+                {
+                    memcpy(pbCurrent, approvedUsername.c_str(), usernameSize);
+                    pkil->UserName.Buffer = (PWSTR)(ULONG_PTR)(pbCurrent - kerbBuffer);
+                    pkil->UserName.Length = usernameSize;
+                    pkil->UserName.MaximumLength = usernameSize;
+                    pbCurrent += usernameSize;
+                }
+
+                // Password (plaintext - Winlogon/LSA handles protection in this context)
+                if (passwordSize > 0)
+                {
+                    memcpy(pbCurrent, approvedPassword.c_str(), passwordSize);
+                    pkil->Password.Buffer = (PWSTR)(ULONG_PTR)(pbCurrent - kerbBuffer);
+                    pkil->Password.Length = passwordSize;
+                    pkil->Password.MaximumLength = passwordSize;
+                }
+
+                LogCredentialDebug(L"KERB buffer built. TotalSize=" + std::to_wstring(totalSize));
+
+                ZeroMemory(pcpcs, sizeof(CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION));
+                pcpcs->ulAuthenticationPackage = ulAuthPackage;
+                pcpcs->rgbSerialization = kerbBuffer;
+                pcpcs->cbSerialization = totalSize;
+
+                *pcpgsr = CPGSR_RETURN_CREDENTIAL_FINISHED;
+
+                if (ppszOptionalStatusText)
+                {
+                    std::wstring message = L"Влизане като " + approvedUsername + L"@" + approvedDomain + L"...";
+                    SHStrDupW(message.c_str(), ppszOptionalStatusText);
+                }
+
+                if (pcpsiOptionalStatusIcon)
+                    *pcpsiOptionalStatusIcon = CPSI_SUCCESS;
+
+                LogCredentialDebug(L"Authentication buffer created successfully, attempting automatic login...");
+                return S_OK;
             }
             else
             {
-                LogCredentialDebug(L"CredPackAuthenticationBufferW failed to get buffer size. Result: " + std::to_wstring(result) + L", Error: " + std::to_wstring(lastError));
+                LogCredentialDebug(L"Failed to allocate KERB buffer - falling back to manual entry");
+
+                *pcpgsr = CPGSR_NO_CREDENTIAL_NOT_FINISHED;
+                ZeroMemory(pcpcs, sizeof(CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION));
+
+                if (ppszOptionalStatusText)
+                {
+                    std::wstring message = L"Сесията е одобрена за " + approvedUsername + L"@" + approvedDomain + L". Моля, въведете паролата.";
+                    SHStrDupW(message.c_str(), ppszOptionalStatusText);
+                }
+
+                if (pcpsiOptionalStatusIcon)
+                    *pcpsiOptionalStatusIcon = CPSI_SUCCESS;
+
+                return S_OK;
             }
-            
-            // Fallback: Ако CredPackAuthenticationBuffer не работи
-            LogCredentialDebug(L"CredPackAuthenticationBufferW failed, showing manual login prompt");
-            
-            *pcpgsr = CPGSR_NO_CREDENTIAL_NOT_FINISHED;
-            ZeroMemory(pcpcs, sizeof(CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION));
-            
-            if (ppszOptionalStatusText)
-            {
-                std::wstring message = L"Сесията е одобрена за " + approvedUsername + L"@nursan. Моля, въведете паролата.";
-                SHStrDupW(message.c_str(), ppszOptionalStatusText);
-            }
-            
-            if (pcpsiOptionalStatusIcon)
-            {
-                *pcpsiOptionalStatusIcon = CPSI_SUCCESS;
-            }
-            
-            return S_OK;
         }
         else
         {

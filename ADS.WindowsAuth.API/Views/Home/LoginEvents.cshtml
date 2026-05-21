@@ -1,0 +1,119 @@
+@using ADS.WindowsAuth.Core.Data.Entities
+@{
+    Layout = "_Layout";
+    ViewData["Title"] = "Windows влизания";
+    var events = ViewBag.Events as List<LoginEventEntity> ?? new List<LoginEventEntity>();
+    var machines = ViewBag.Machines as List<string> ?? new List<string>();
+    var machineName = ViewBag.MachineName as string;
+    var username = ViewBag.Username as string;
+    var page = ViewBag.Page as int? ?? 1;
+    var totalPages = ViewBag.TotalPages as int? ?? 1;
+    var totalCount = ViewBag.TotalCount as int? ?? 0;
+    var pageSize = ViewBag.PageSize as int? ?? 50;
+}
+<div class="container mt-4 mb-5">
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <h2 class="mb-2">🔐 Къде е влизано (Windows влизания)</h2>
+            <p class="text-muted mb-0">Вижте <strong>кой</strong>, <strong>кога</strong> и <strong>на коя машина</strong> е влязъл в Windows. Данните идват от Monitor (Security Event Log 4624).</p>
+        </div>
+    </div>
+    <div class="d-flex flex-wrap gap-2 mb-4 align-items-center">
+        <a href="/" class="btn btn-outline-primary btn-sm"><i class="bi bi-house"></i> Начало</a>
+        <a href="/input-logs" class="btn btn-success btn-sm"><i class="bi bi-keyboard"></i> Какво се пише (клавиши и кликове)</a>
+        <a href="/system-logs" class="btn btn-outline-primary btn-sm"><i class="bi bi-journal-code"></i> Системни логове</a>
+        <a href="/logs" class="btn btn-outline-secondary btn-sm"><i class="bi bi-file-text"></i> Логове по машина</a>
+    </div>
+    <div class="card shadow-sm">
+        <div class="card-header">
+            <h5 class="mb-0">Филтри</h5>
+        </div>
+        <div class="card-body">
+            <form method="get" action="/login-events" class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">Машина</label>
+                    <select name="machineName" class="form-select">
+                        <option value="">-- Всички --</option>
+                        @foreach (var m in machines)
+                        {
+                            if (m == machineName)
+                            {
+                                <option value="@m" selected>@m</option>
+                            }
+                            else
+                            {
+                                <option value="@m">@m</option>
+                            }
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Потребител (съдържа)</label>
+                    <input type="text" name="username" class="form-control" value="@username" placeholder="име" />
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary">Приложи</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="card shadow-sm mt-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Събития <span class="badge bg-secondary">@totalCount общо</span></h5>
+        </div>
+        <div class="card-body">
+            @if (events.Any())
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th>Време</th>
+                                <th>Потребител</th>
+                                <th>Домейн</th>
+                                <th>Машина</th>
+                                <th>Метод</th>
+                                <th>Успех</th>
+                                <th>IP</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var e in events)
+                            {
+                                <tr>
+                                    <td>@e.LoginTime.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                    <td>@e.Username</td>
+                                    <td>@e.Domain</td>
+                                    <td>@e.MachineName</td>
+                                    <td><span class="badge bg-info">@e.LoginMethod</span></td>
+                                    <td>@(e.Success ? "✓" : "✗")</td>
+                                    <td>@(e.IpAddress ?? "-")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (totalPages > 1)
+                {
+                    <nav class="mt-2">
+                        <ul class="pagination pagination-sm mb-0">
+                            @if (page > 1)
+                            {
+                                <li class="page-item"><a class="page-link" href="/login-events?machineName=@Uri.EscapeDataString(machineName ?? "")&username=@Uri.EscapeDataString(username ?? "")&page=@(page - 1)&pageSize=@pageSize">←</a></li>
+                            }
+                            <li class="page-item disabled"><span class="page-link">Стр. @(page) от @totalPages</span></li>
+                            @if (page < totalPages)
+                            {
+                                <li class="page-item"><a class="page-link" href="/login-events?machineName=@Uri.EscapeDataString(machineName ?? "")&username=@Uri.EscapeDataString(username ?? "")&page=@(page + 1)&pageSize=@pageSize">→</a></li>
+                            }
+                        </ul>
+                    </nav>
+                }
+            }
+            else
+            {
+                <p class="text-muted mb-0">Няма записани влизания. Monitor трябва да работи с права за четене на Security Event Log и да изпраща към /api/activity/login.</p>
+            }
+        </div>
+    </div>
+</div>

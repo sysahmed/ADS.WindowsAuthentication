@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ADS.WindowsAuth.Core.Models;
 using ADS.WindowsAuth.Core.Services;
@@ -138,13 +139,15 @@ public class PolicyController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError($"Грешка при изтриване на политика {id}: {ex.Message}", ex);
-            return StatusCode(500, new { message = "Грешка при изтриване на политика" });
+            return StatusCode(500, new { message = "Грешка при изтриване на политика", error = ex.Message });
         }
     }
 
     /// <summary>
-    /// Получава активни политики за конкретна машина и потребител
+    /// Получава активни политики за конкретна машина и потребител.
+    /// AllowAnonymous – Monitor услугата вика този endpoint без логин; без него политиките не се прилагат на клиентите.
     /// </summary>
+    [AllowAnonymous]
     [HttpGet("machine/{machineName}/user/{username}")]
     public IActionResult GetPoliciesForMachine(string machineName, string username)
     {

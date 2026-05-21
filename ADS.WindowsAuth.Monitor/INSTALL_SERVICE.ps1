@@ -109,6 +109,20 @@ elseif (Test-Path $credentialProviderDll)
     Write-Host "OK Credential Provider DLL copied" -ForegroundColor Green
 }
 
+# Copy RemoteDesktopHost (InputCapture, screen capture) - Monitor го стартира в потребителска сесия
+$rdHostSource = Join-Path $exeDir "RemoteDesktopHost"
+if (Test-Path $rdHostSource)
+{
+    $rdHostDest = Join-Path $InstallPath "RemoteDesktopHost"
+    if (-not (Test-Path $rdHostDest)) { New-Item -ItemType Directory -Path $rdHostDest -Force | Out-Null }
+    Copy-Item "$rdHostSource\*" $rdHostDest -Recurse -Force
+    Write-Host "OK RemoteDesktopHost copied (InputCapture, screen capture)" -ForegroundColor Green
+}
+else
+{
+    Write-Host "WARNING: RemoteDesktopHost folder not found. Build Monitor first - InputCapture will not work." -ForegroundColor Yellow
+}
+
 $serviceExePath = Join-Path $InstallPath $exeName
 Write-Host "OK Files copied to: $InstallPath" -ForegroundColor Green
 Write-Host ""

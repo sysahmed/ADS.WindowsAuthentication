@@ -131,8 +131,17 @@ public class MonitorInstallerService
             if (IsServiceInstalled())
             {
                 _logger.LogInfo("Monitor сервизът вече е инсталиран. Спиране и премахване...");
-                await UninstallAsync();
-                await Task.Delay(2000); // Изчакване на деинсталация
+                var uninstallResult = await UninstallAsync();
+                if (!uninstallResult.Success)
+                {
+                    return uninstallResult; // Предаваме грешката (напр. 1072 след рестарт)
+                }
+
+                // Изчакване докато registry ключа на сервиза изчезне напълно (max 60 сек).
+                // sc delete отчита SUCCESS, но ключът стои ако services.msc/Task Manager
+                // държи отворен handle — sc create тогава пак дава 1072.
+                _logger.LogInfo("Изчакване registry ключа на сервиза да се изчисти...");
+                await WaitForServiceKeyRemovedAsync(timeoutMs: 60000);
             }
 
             // Стъпка 1: Създаване на директория
@@ -152,7 +161,7 @@ public class MonitorInstallerService
             File.Copy(exePath, targetExe, true);
             _logger.LogInfo("Monitor EXE копиран успешно");
 
-            // Копиране на всички DLL файлове
+            // Копиране на всички DLL файлове (вкл. от корена)
             if (!string.IsNullOrEmpty(sourceDir))
             {
                 foreach (var dll in Directory.GetFiles(sourceDir, "*.dll"))
@@ -162,6 +171,26 @@ public class MonitorInstallerService
                     File.Copy(dll, targetDll, true);
                 }
                 _logger.LogInfo("DLL файлове копирани");
+
+                // Копиране на runtimes/ (System.ServiceProcess.ServiceController.dll и др.) – задължително за Windows Service
+                string runtimesSource = Path.Combine(sourceDir, "runtimes");
+                if (Directory.Exists(runtimesSource))
+                {
+                    CopyDirectory(runtimesSource, Path.Combine(INSTALL_PATH, "runtimes"));
+                    _logger.LogInfo("Папка runtimes копирана");
+                }
+
+                // Копиране на RemoteDesktopHost/ – необходим за Remote Desktop функционалност
+                string rdHostSource = Path.Combine(sourceDir, "RemoteDesktopHost");
+                if (Directory.Exists(rdHostSource))
+                {
+                    CopyDirectory(rdHostSource, Path.Combine(INSTALL_PATH, "RemoteDesktopHost"));
+                    _logger.LogInfo("Папка RemoteDesktopHost копирана");
+                }
+                else
+                {
+                    _logger.LogWarning("RemoteDesktopHost/ папката не е намерена до Monitor.exe – Remote Desktop няма да работи.");
+                }
 
                 // Копиране на конфигурационни файлове
                 foreach (var config in Directory.GetFiles(sourceDir, "*.json"))
@@ -185,19 +214,34 @@ public class MonitorInstallerService
                 };
             }
 
+            // Конфигуриране: рестарт при грешка (след boot)
+            ConfigureServiceFailureRecovery();
+
             // Стъпка 4: Стартиране на сървиза
+            // Забавяне – Windows понякога нуждае време да регистрира сървиза след sc create
+            _logger.LogInfo("Изчакване 3 секунди преди стартиране на сървиза...");
+            await Task.Delay(3000);
+
             _logger.LogInfo("Стартиране на сървиза...");
             bool started = await StartServiceAsync();
             if (!started)
             {
-                _logger.LogWarning("Сървизът е инсталиран, но не може да се стартира автоматично. Стартирай го ръчно от Services.");
+                _logger.LogWarning("Сървизът е инсталиран, но незабавният старт е неуспешен. Опит за повторен старт след 5 сек...");
+                await Task.Delay(5000);
+                started = await StartServiceAsync();
+            }
+            if (!started)
+            {
+                _logger.LogWarning("Сървизът е инсталиран (start= auto). Ще се стартира при следващ рестарт на Windows. Можеш да го стартираш ръчно от Services.");
             }
 
             _logger.LogInfo("Инсталацията на Monitor завърши успешно!");
             return new InstallResult
             {
                 Success = true,
-                Message = "Monitor е инсталиран и стартиран успешно като Windows Service!"
+                Message = started
+                    ? "Monitor е инсталиран и стартиран успешно като Windows Service!"
+                    : "Monitor е инсталиран. Сървизът ще се стартира при рестарт или го стартирай ръчно от Services."
             };
         }
         catch (Exception ex)
@@ -238,7 +282,9 @@ public class MonitorInstallerService
 
             _logger.LogInfo("Спиране на Monitor сървиз...");
             await StopServiceAsync();
-            await Task.Delay(2000);
+            // Изчакване 10 сек – процесът трябва напълно да спре преди delete (иначе грешка 1072)
+            _logger.LogInfo("Изчакване 10 секунди преди премахване...");
+            await Task.Delay(10000);
 
             _logger.LogInfo("Деинсталиране на Monitor сървиз...");
             bool uninstalled = await UninstallServiceAsync();
@@ -247,7 +293,7 @@ public class MonitorInstallerService
                 return new InstallResult
                 {
                     Success = false,
-                    Message = "Грешка при деинсталиране на сървиза!"
+                    Message = "Услугата е маркирана за изтриване. Рестартирай компютъра и опитай инсталацията отново."
                 };
             }
 
@@ -270,95 +316,195 @@ public class MonitorInstallerService
     }
 
     /// <summary>
-    /// Инсталира сървиза с sc.exe
+    /// Изчаква докато registry ключът на сервиза изчезне напълно след sc delete.
+    /// Windows маркира сервиза за изтриване, но реалното премахване от registry
+    /// се забавя докато всички handle-ове (services.msc, Task Manager...) се освободят.
+    /// </summary>
+    private async Task WaitForServiceKeyRemovedAsync(int timeoutMs = 60000)
+    {
+        const string keyPath = @"SYSTEM\CurrentControlSet\Services\" + SERVICE_NAME;
+        int elapsed = 0;
+        const int pollMs = 500;
+
+        while (elapsed < timeoutMs)
+        {
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(keyPath);
+            if (key == null)
+            {
+                _logger.LogInfo($"Registry ключ на сервиза е изчистен след {elapsed} мс — готов за sc create");
+                return;
+            }
+            await Task.Delay(pollMs);
+            elapsed += pollMs;
+
+            if (elapsed % 5000 == 0)
+                _logger.LogInfo($"Изчакване registry ключа да се изчисти... ({elapsed / 1000} сек)");
+        }
+
+        _logger.LogWarning($"Registry ключ на сервиза не е изчистен след {timeoutMs / 1000} сек. Опит за sc create въпреки това...");
+    }
+
+    /// <summary>
+    /// Инсталира сървиза с sc.exe. Повторен опит при 1072 (mark for deletion).
     /// </summary>
     private async Task<bool> InstallServiceAsync(string exePath)
     {
+        const int ERROR_SERVICE_MARKED_FOR_DELETE = 1072;
+        for (int attempt = 1; attempt <= 3; attempt++)
+        {
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo
+                {
+                    FileName = "sc.exe",
+                    // depend= Tcpip – изчаква мрежата преди старт | start= auto – автоматичен старт при boot
+                    Arguments = $"create \"{SERVICE_NAME}\" binPath= \"\"{exePath}\"\" start= auto depend= Tcpip DisplayName= \"ADS Windows Authentication Monitor\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    WindowStyle = ProcessWindowStyle.Hidden
+                };
+
+                using (Process? process = Process.Start(psi))
+                {
+                    if (process != null)
+                    {
+                        string output = await process.StandardOutput.ReadToEndAsync();
+                        string error = await process.StandardError.ReadToEndAsync();
+                        await process.WaitForExitAsync();
+
+                        _logger.LogInfo($"sc create output: {output}");
+                        if (!string.IsNullOrEmpty(error))
+                        {
+                            _logger.LogWarning($"sc create error: {error}");
+                        }
+
+                        if (process.ExitCode == 0)
+                        {
+                            _logger.LogInfo($"Инсталация на сървиз успешна");
+                            ConfigureServiceFailureRecovery();
+                            return true;
+                        }
+
+                        if (process.ExitCode == ERROR_SERVICE_MARKED_FOR_DELETE && attempt < 3)
+                        {
+                            _logger.LogWarning($"sc create 1072 (mark for deletion). Изчакване 20 сек и опит {attempt + 1}/3...");
+                            await Task.Delay(20000);
+                            continue;
+                        }
+
+                        _logger.LogInfo($"Инсталация на сървиз неуспешна (Exit Code: {process.ExitCode})");
+                        return false;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("Грешка при инсталация на сървиз", ex);
+                if (attempt < 3)
+                {
+                    await Task.Delay(5000);
+                    continue;
+                }
+                return false;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Конфигурира рестарт при грешка (Failure recovery) – sc failure
+    /// </summary>
+    private void ConfigureServiceFailureRecovery()
+    {
         try
         {
-            ProcessStartInfo psi = new ProcessStartInfo
+            var psi = new ProcessStartInfo
             {
                 FileName = "sc.exe",
-                Arguments = $"create \"{SERVICE_NAME}\" binPath= \"\"{exePath}\"\" start= auto DisplayName= \"ADS Windows Authentication Monitor\"",
+                Arguments = $"failure \"{SERVICE_NAME}\" reset= 86400 actions= restart/60000",
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 WindowStyle = ProcessWindowStyle.Hidden
             };
-
-            using (Process? process = Process.Start(psi))
+            using var process = Process.Start(psi);
+            if (process != null)
             {
-                if (process != null)
-                {
-                    string output = await process.StandardOutput.ReadToEndAsync();
-                    string error = await process.StandardError.ReadToEndAsync();
-                    await process.WaitForExitAsync();
-
-                    _logger.LogInfo($"sc create output: {output}");
-                    if (!string.IsNullOrEmpty(error))
-                    {
-                        _logger.LogWarning($"sc create error: {error}");
-                    }
-
-                    bool success = process.ExitCode == 0;
-                    _logger.LogInfo($"Инсталация на сървиз {(success ? "успешна" : "неуспешна")} (Exit Code: {process.ExitCode})");
-                    return success;
-                }
+                process.WaitForExit();
+                if (process.ExitCode == 0)
+                    _logger.LogInfo("Failure recovery конфигуриран: рестарт след 60 сек при грешка");
             }
-
-            return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError("Грешка при инсталация на сървиз", ex);
-            return false;
+            _logger.LogWarning($"Неуспешно конфигуриране на failure recovery: {ex.Message}");
         }
     }
 
     /// <summary>
-    /// Деинсталира сървиза с sc.exe
+    /// Деинсталира сървиза с sc.exe. При грешка 1072 (marked for deletion) – изчаква и опитва отново.
     /// </summary>
     private async Task<bool> UninstallServiceAsync()
     {
-        try
+        const int ERROR_SERVICE_MARKED_FOR_DELETE = 1072;
+        int maxRetries = 3;
+        int waitSecondsBetweenRetries = 15;
+
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
         {
-            ProcessStartInfo psi = new ProcessStartInfo
+            try
             {
-                FileName = "sc.exe",
-                Arguments = $"delete \"{SERVICE_NAME}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                WindowStyle = ProcessWindowStyle.Hidden
-            };
-
-            using (Process? process = Process.Start(psi))
-            {
-                if (process != null)
+                ProcessStartInfo psi = new ProcessStartInfo
                 {
-                    string output = await process.StandardOutput.ReadToEndAsync();
-                    string error = await process.StandardError.ReadToEndAsync();
-                    await process.WaitForExitAsync();
+                    FileName = "sc.exe",
+                    Arguments = $"delete \"{SERVICE_NAME}\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    WindowStyle = ProcessWindowStyle.Hidden
+                };
 
-                    _logger.LogInfo($"sc delete output: {output}");
-                    if (!string.IsNullOrEmpty(error))
+                using (Process? process = Process.Start(psi))
+                {
+                    if (process != null)
                     {
-                        _logger.LogWarning($"sc delete error: {error}");
-                    }
+                        string output = await process.StandardOutput.ReadToEndAsync();
+                        string error = await process.StandardError.ReadToEndAsync();
+                        await process.WaitForExitAsync();
 
-                    return process.ExitCode == 0;
+                        _logger.LogInfo($"sc delete output: {output}");
+                        if (!string.IsNullOrEmpty(error))
+                        {
+                            _logger.LogWarning($"sc delete error: {error}");
+                        }
+
+                        if (process.ExitCode == 0)
+                            return true;
+
+                        if (process.ExitCode == ERROR_SERVICE_MARKED_FOR_DELETE && attempt < maxRetries)
+                        {
+                            _logger.LogWarning($"Услугата е маркирана за изтриване. Опит {attempt}/{maxRetries}. Изчакване {waitSecondsBetweenRetries} секунди...");
+                            await Task.Delay(waitSecondsBetweenRetries * 1000);
+                            continue;
+                        }
+
+                        return false;
+                    }
                 }
             }
+            catch (Exception ex)
+            {
+                _logger.LogError("Грешка при деинсталация на сървиз", ex);
+                if (attempt == maxRetries) return false;
+                await Task.Delay(waitSecondsBetweenRetries * 1000);
+            }
+        }
 
-            return false;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError("Грешка при деинсталация на сървиз", ex);
-            return false;
-        }
+        return false;
     }
 
     /// <summary>
@@ -383,7 +529,14 @@ public class MonitorInstallerService
             {
                 if (process != null)
                 {
+                    string output = await process.StandardOutput.ReadToEndAsync();
+                    string error = await process.StandardError.ReadToEndAsync();
                     await process.WaitForExitAsync();
+
+                    if (process.ExitCode != 0)
+                    {
+                        _logger.LogWarning($"sc start неуспешен (Exit Code: {process.ExitCode}). Output: {output}. Error: {error}");
+                    }
                     return process.ExitCode == 0;
                 }
             }
@@ -430,6 +583,27 @@ public class MonitorInstallerService
         {
             _logger.LogWarning($"Грешка при спиране на сървиз: {ex.Message}");
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Рекурсивно копиране на директория (за runtimes и др.)
+    /// </summary>
+    private static void CopyDirectory(string sourceDir, string targetDir)
+    {
+        if (!Directory.Exists(targetDir))
+            Directory.CreateDirectory(targetDir);
+
+        foreach (var file in Directory.GetFiles(sourceDir))
+        {
+            var dest = Path.Combine(targetDir, Path.GetFileName(file));
+            File.Copy(file, dest, true);
+        }
+
+        foreach (var subDir in Directory.GetDirectories(sourceDir))
+        {
+            var destSubDir = Path.Combine(targetDir, Path.GetFileName(subDir));
+            CopyDirectory(subDir, destSubDir);
         }
     }
 

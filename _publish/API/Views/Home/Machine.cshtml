@@ -1,0 +1,291 @@
+@{
+    Layout = "_Layout";
+    var machineName = ViewBag.MachineName as string ?? "";
+    ViewData["Title"] = $"Машина: {machineName}";
+}
+
+<div class="container-fluid mt-3 mb-5">
+    <div class="row mb-3">
+        <div class="col">
+            <h3 class="mb-1"><i class="bi bi-pc-display text-primary"></i> @machineName</h3>
+            <p class="text-muted mb-0 small">Реално-времеви мониторинг · обновява се на всеки 15 сек</p>
+        </div>
+        <div class="col-auto d-flex align-items-center gap-2">
+            <span id="statusBadge" class="badge bg-secondary">Зареждане...</span>
+            <a href="/system-logs?machineName=@machineName" class="btn btn-outline-secondary btn-sm"><i class="bi bi-journal-text"></i> Логове</a>
+            <button class="btn btn-outline-success btn-sm" onclick="connectRD()"><i class="bi bi-display"></i> Remote Desktop</button>
+            <a href="/RemoteDesktop" class="btn btn-outline-primary btn-sm"><i class="bi bi-house"></i></a>
+        </div>
+    </div>
+
+    <!-- Stats bar -->
+    <div class="row g-2 mb-3" id="statsBar" style="display:none!important;">
+        <div class="col-6 col-md-3">
+            <div class="card text-center py-2 shadow-sm">
+                <div class="fs-4 fw-bold text-primary" id="procCount">—</div>
+                <div class="text-muted small">Процеси</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card text-center py-2 shadow-sm">
+                <div class="fs-4 fw-bold text-success" id="appCount">—</div>
+                <div class="text-muted small">Инсталирани</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card text-center py-2 shadow-sm">
+                <div class="fs-4 fw-bold text-warning" id="memTotal">—</div>
+                <div class="text-muted small">RAM (MB)</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card text-center py-2 shadow-sm">
+                <div class="fs-5 fw-bold text-info" id="updatedAt">—</div>
+                <div class="text-muted small">Последно обновяване</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <ul class="nav nav-tabs mb-3" id="mainTabs">
+        <li class="nav-item">
+            <button class="nav-link active" onclick="switchTab('processes')" id="tabProcessesBtn">
+                <i class="bi bi-cpu"></i> Процеси (<span id="procCountTab">—</span>)
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" onclick="switchTab('apps')" id="tabAppsBtn">
+                <i class="bi bi-box"></i> Инсталирани (<span id="appCountTab">—</span>)
+            </button>
+        </li>
+    </ul>
+
+    <!-- Processes tab -->
+    <div id="tabProcesses">
+        <div class="mb-2 d-flex gap-2">
+            <input type="text" class="form-control form-control-sm w-auto" id="procSearch" placeholder="Търси процес..." oninput="filterProcesses()">
+        </div>
+        <div class="card shadow-sm">
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 500px; overflow-y:auto;">
+                    <table class="table table-sm table-hover mb-0" id="procTable">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th>PID</th>
+                                <th>Процес</th>
+                                <th>Прозорец</th>
+                                <th class="text-end">RAM (MB)</th>
+                                <th>Потребител</th>
+                                <th class="text-center">Действие</th>
+                            </tr>
+                        </thead>
+                        <tbody id="procBody">
+                            <tr><td colspan="6" class="text-center text-muted py-4">Зареждане...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Apps tab -->
+    <div id="tabApps" style="display:none;">
+        <div class="mb-2 d-flex gap-2">
+            <input type="text" class="form-control form-control-sm w-auto" id="appSearch" placeholder="Търси програма..." oninput="filterApps()">
+        </div>
+        <div class="card shadow-sm">
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 500px; overflow-y:auto;">
+                    <table class="table table-sm table-hover mb-0" id="appTable">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th>Програма</th>
+                                <th>Версия</th>
+                                <th>Издател</th>
+                                <th>Дата</th>
+                                <th class="text-center">Действие</th>
+                            </tr>
+                        </thead>
+                        <tbody id="appBody">
+                            <tr><td colspan="5" class="text-center text-muted py-4">Зареждане...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Confirm modal -->
+<div class="modal fade" id="confirmModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header"><h6 class="modal-title" id="confirmTitle">Потвърди</h6></div>
+            <div class="modal-body"><p id="confirmMsg"></p></div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Отказ</button>
+                <button class="btn btn-danger btn-sm" id="confirmOkBtn">Продължи</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+const MACHINE = '@machineName';
+let allProcesses = [];
+let allApps = [];
+let confirmCallback = null;
+const confirmModal = new bootstrap.Modal(document.getElementById('confirmModal'));
+
+function switchTab(tab) {
+    document.getElementById('tabProcesses').style.display = tab === 'processes' ? '' : 'none';
+    document.getElementById('tabApps').style.display = tab === 'apps' ? '' : 'none';
+    document.getElementById('tabProcessesBtn').className = 'nav-link' + (tab === 'processes' ? ' active' : '');
+    document.getElementById('tabAppsBtn').className = 'nav-link' + (tab === 'apps' ? ' active' : '');
+}
+
+function filterProcesses() {
+    const q = document.getElementById('procSearch').value.toLowerCase();
+    renderProcesses(allProcesses.filter(p => p.name.toLowerCase().includes(q) || (p.mainWindowTitle||'').toLowerCase().includes(q)));
+}
+
+function filterApps() {
+    const q = document.getElementById('appSearch').value.toLowerCase();
+    renderApps(allApps.filter(a => a.name.toLowerCase().includes(q) || (a.publisher||'').toLowerCase().includes(q)));
+}
+
+function renderProcesses(procs) {
+    const tbody = document.getElementById('procBody');
+    if (!procs.length) { tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Няма процеси</td></tr>'; return; }
+    tbody.innerHTML = procs.map(p => `
+        <tr>
+            <td class="text-muted small">${p.pid}</td>
+            <td><strong>${escHtml(p.name)}</strong></td>
+            <td class="text-muted small">${escHtml(p.mainWindowTitle||'')}</td>
+            <td class="text-end">${p.memoryMb}</td>
+            <td class="text-muted small">${escHtml(p.username||'')}</td>
+            <td class="text-center">
+                <button class="btn btn-xs btn-outline-danger" style="font-size:0.75rem;padding:1px 6px;" onclick="killProcess(${p.pid},'${escHtml(p.name)}')">
+                    <i class="bi bi-x-circle"></i> Kill
+                </button>
+            </td>
+        </tr>`).join('');
+}
+
+function renderApps(apps) {
+    const tbody = document.getElementById('appBody');
+    if (!apps.length) { tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Няма данни</td></tr>'; return; }
+    tbody.innerHTML = apps.map(a => `
+        <tr>
+            <td><strong>${escHtml(a.name)}</strong></td>
+            <td class="text-muted small">${escHtml(a.version||'')}</td>
+            <td class="text-muted small">${escHtml(a.publisher||'')}</td>
+            <td class="text-muted small">${escHtml(a.installDate||'')}</td>
+            <td class="text-center">
+                <button class="btn btn-xs btn-outline-danger" style="font-size:0.75rem;padding:1px 6px;" onclick="uninstallApp('${escHtml(a.name)}')">
+                    <i class="bi bi-trash"></i> Деинсталирай
+                </button>
+            </td>
+        </tr>`).join('');
+}
+
+async function loadSnapshot() {
+    try {
+        const resp = await fetch(`/api/machines/${encodeURIComponent(MACHINE)}/snapshot`);
+        if (!resp.ok) {
+            document.getElementById('statusBadge').className = 'badge bg-danger';
+            document.getElementById('statusBadge').textContent = 'Офлайн / няма данни';
+            document.getElementById('procBody').innerHTML = '<tr><td colspan="6" class="text-center text-warning py-4">Monitor не е изпратил данни. Провери дали е стартиран.</td></tr>';
+            document.getElementById('appBody').innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">—</td></tr>';
+            return;
+        }
+        const data = await resp.json();
+        allProcesses = (data.processes || []).sort((a,b) => b.memoryMb - a.memoryMb);
+        allApps = (data.installedApps || []).sort((a,b) => a.name.localeCompare(b.name));
+
+        document.getElementById('statusBadge').className = 'badge bg-success';
+        document.getElementById('statusBadge').textContent = 'Онлайн';
+        document.getElementById('statsBar').style.display = '';
+        document.getElementById('procCount').textContent = allProcesses.length;
+        document.getElementById('appCount').textContent = allApps.length;
+        document.getElementById('procCountTab').textContent = allProcesses.length;
+        document.getElementById('appCountTab').textContent = allApps.length;
+        const totalMem = allProcesses.reduce((s,p) => s + p.memoryMb, 0);
+        document.getElementById('memTotal').textContent = totalMem.toLocaleString();
+        const upd = new Date(data.updatedAt);
+        document.getElementById('updatedAt').textContent = upd.toLocaleTimeString();
+
+        filterProcesses();
+        filterApps();
+    } catch (e) {
+        document.getElementById('statusBadge').className = 'badge bg-danger';
+        document.getElementById('statusBadge').textContent = 'Грешка';
+    }
+}
+
+function confirm2(title, msg, cb) {
+    document.getElementById('confirmTitle').textContent = title;
+    document.getElementById('confirmMsg').textContent = msg;
+    confirmCallback = cb;
+    confirmModal.show();
+}
+document.getElementById('confirmOkBtn').addEventListener('click', () => {
+    confirmModal.hide();
+    if (confirmCallback) confirmCallback();
+});
+
+async function killProcess(pid, name) {
+    confirm2('Kill процес', `Спиране на ${name} (PID ${pid})?`, async () => {
+        const r = await fetch(`/api/machines/${encodeURIComponent(MACHINE)}/command`, {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ type: 'kill', argument: String(pid) })
+        });
+        if (r.ok) { showToast(`Kill команда изпратена за ${name}`); setTimeout(loadSnapshot, 5000); }
+        else showToast('Грешка при изпращане', true);
+    });
+}
+
+async function uninstallApp(name) {
+    confirm2('Деинсталиране', `Деинсталиране на "${name}"?\nMonitor ще изпълни командата.`, async () => {
+        const r = await fetch(`/api/machines/${encodeURIComponent(MACHINE)}/command`, {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ type: 'uninstall', argument: name })
+        });
+        if (r.ok) { showToast(`Команда за деинсталиране изпратена`); setTimeout(loadSnapshot, 15000); }
+        else showToast('Грешка при изпращане', true);
+    });
+}
+
+async function connectRD() {
+    try {
+        const r = await fetch('/api/remotedesktop/sessions/createorget', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ machineName: MACHINE, requestedBy: 'web-admin' })
+        });
+        const d = await r.json();
+        window.location.href = '/RemoteDesktop/Viewer?sessionId=' + d.sessionId;
+    } catch(e) { alert('Грешка: ' + e.message); }
+}
+
+let toastEl = null;
+function showToast(msg, isError = false) {
+    if (!toastEl) {
+        const div = document.createElement('div');
+        div.style.cssText = 'position:fixed;bottom:1rem;right:1rem;z-index:9999;';
+        div.innerHTML = '<div id="_toast" class="toast align-items-center text-white border-0" role="alert"><div class="d-flex"><div class="toast-body" id="_toastMsg"></div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>';
+        document.body.appendChild(div);
+        toastEl = new bootstrap.Toast(document.getElementById('_toast'));
+    }
+    const el = document.getElementById('_toast');
+    el.className = `toast align-items-center text-white border-0 ${isError ? 'bg-danger' : 'bg-success'}`;
+    document.getElementById('_toastMsg').textContent = msg;
+    toastEl.show();
+}
+
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+loadSnapshot();
+setInterval(loadSnapshot, 15000);
+</script>
+}

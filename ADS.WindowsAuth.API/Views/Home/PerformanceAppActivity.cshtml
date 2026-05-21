@@ -1,0 +1,127 @@
+@using ADS.WindowsAuth.Core.Data.Entities
+@{
+    Layout = "_Layout";
+    var items = ViewBag.Items as List<InputLogEntity> ?? new List<InputLogEntity>();
+    var username = ViewBag.SelectedUsername as string;
+    var app = ViewBag.SelectedApp as string;
+    var dateDisplay = ViewBag.SelectedDateDisplay as string;
+    var backUrl = ViewBag.BackUrl as string ?? "/performance";
+    var totalCount = ViewBag.TotalCount as int? ?? 0;
+    var page = ViewBag.Page as int? ?? 1;
+    var totalPages = ViewBag.TotalPages as int? ?? 1;
+    var pageSize = ViewBag.PageSize as int? ?? 200;
+    var machineName = ViewBag.SelectedMachine as string;
+    var dateStr = ViewBag.SelectedDate as string;
+    var errorMessage = ViewBag.ErrorMessage as string;
+    var totalInputLogsForDay = ViewBag.TotalInputLogsForDay as int? ?? 0;
+    var usernamesWithData = ViewBag.UsernamesWithData as List<string> ?? new List<string>();
+    var appsWithData = ViewBag.AppsWithData as List<string> ?? new List<string>();
+    ViewData["Title"] = $"Дейности в {app}";
+}
+<div class="container mt-4 mb-5">
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <a href="@backUrl" class="btn btn-outline-primary btn-sm mb-2"><i class="bi bi-arrow-left"></i> Обратно към Продуктивност</a>
+            <h2 class="mb-2">⌨️ Дейности в <strong>@app</strong></h2>
+            <p class="text-muted mb-0">Клавиши и кликове в приложението за потребител <strong>@username</strong> на дата <strong>@dateDisplay</strong>.</p>
+        </div>
+    </div>
+    <div class="alert alert-info mb-4">
+        <strong>Откъде идват данните за Chrome и други приложения?</strong> Реалните клавиши и кликове по приложение се записват <strong>само когато ADS Client работи в сесията на потребителя</strong> (потребителят е логнат и е стартирал Client). Monitor услугата работи в Session 0 и <strong>не вижда</strong> активния прозорец на потребителя (Chrome, SAP и др.), затова при само Monitor ще виждате празно или само случайни записи. Стартирайте <strong>ADS Client</strong> на машината като логнат потребител, за да има реални данни тук.
+    </div>
+    @if (username != null && username.EndsWith("$", StringComparison.Ordinal))
+    {
+        <div class="alert alert-warning mb-4">
+            <strong>Името „@username“ е акаунт на машината</strong>, не на потребител. Клавиши и кликове се записват под името на <strong>логнатия потребител</strong> (от ADS Client в неговата сесия). Изберете от списъка по-долу реален потребител с данни или отворете <a href="/input-logs?dateFrom=@dateStr&dateTo=@dateStr">Въвеждане и кликове</a>.
+        </div>
+    }
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-warning mb-4">@errorMessage</div>
+    }
+    <div class="card shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Записи <span class="badge bg-secondary">@totalCount общо</span></h5>
+        </div>
+        <div class="card-body">
+            @if (items.Any())
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th style="width: 155px;">Време</th>
+                                <th style="width: 70px;">Тип</th>
+                                <th>Прозорец / Данни</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var e in items)
+                            {
+                                <tr>
+                                    <td>@e.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                    <td><span class="badge @(e.LogType == "Click" ? "bg-info" : "bg-secondary")">@e.LogType</span></td>
+                                    <td>
+                                        @if (e.IsPassword)
+                                        {
+                                            <span class="text-muted">***</span>
+                                        }
+                                        else
+                                        {
+                                            <span title="@e.Data">@(e.Data != null && e.Data.Length > 80 ? e.Data.Substring(0, 77) + "…" : e.Data)</span>
+                                            @if (!string.IsNullOrEmpty(e.WindowTitle) && e.WindowTitle != e.Data)
+                                            {
+                                                <br /><small class="text-muted" title="@e.WindowTitle">@(e.WindowTitle.Length > 60 ? e.WindowTitle.Substring(0, 57) + "…" : e.WindowTitle)</small>
+                                            }
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (totalPages > 1)
+                {
+                    <nav class="mt-2">
+                        <ul class="pagination pagination-sm mb-0">
+                            @if (page > 1)
+                            {
+                                <li class="page-item"><a class="page-link" href="/performance/app-activity?username=@Uri.EscapeDataString(username ?? "")&app=@Uri.EscapeDataString(app ?? "")&machineName=@Uri.EscapeDataString(machineName ?? "")&dateStr=@Uri.EscapeDataString(dateStr ?? "")&page=@(page - 1)&pageSize=@pageSize">←</a></li>
+                            }
+                            <li class="page-item disabled"><span class="page-link">Стр. @(page) от @totalPages</span></li>
+                            @if (page < totalPages)
+                            {
+                                <li class="page-item"><a class="page-link" href="/performance/app-activity?username=@Uri.EscapeDataString(username ?? "")&app=@Uri.EscapeDataString(app ?? "")&machineName=@Uri.EscapeDataString(machineName ?? "")&dateStr=@Uri.EscapeDataString(dateStr ?? "")&page=@(page + 1)&pageSize=@pageSize">→</a></li>
+                            }
+                        </ul>
+                    </nav>
+                }
+            }
+            else
+            {
+                <p class="text-muted mb-0">Няма записи за приложението <strong>@app</strong> за потребител <strong>@username</strong> на дата <strong>@dateDisplay</strong>.</p>
+                @if (totalInputLogsForDay == 0)
+                {
+                    <div class="alert alert-info mt-3 mb-0">
+                        <strong>За дата @dateDisplay в таблица InputLogs няма нито един запис.</strong><br/>
+                        <ul class="mb-2 mt-2">
+                            <li>Клавиши и кликове се записват от <strong>ADS Client</strong> (в сесията на потребителя) или от <strong>Monitor</strong> с input capture – но при работа като Windows Service (Session 0) прихващането обикновено <strong>не получава</strong> въвеждане, затова данните трябва да идват от Client в потребителската сесия.</li>
+                            <li><strong>Проверка дали таблицата и API работят:</strong> отворете <a href="/api/logs/input-stats" target="_blank" rel="noopener">/api/logs/input-stats</a> – показва общ брой записи в InputLogs (както ги вижда API). След това отворете <a href="/api/logs/input-test-add" target="_blank" rel="noopener">/api/logs/input-test-add</a> – добавя един тестов запис; проверете <a href="/input-logs">Въвеждане и кликове</a> дали се вижда. Ако се вижда – таблицата и връзката са наред; данните липсват, защото никой Client/Monitor не изпраща.</li>
+                            <li>Уверете се, че API използва същата база данни, в която проверявате (ConnectionStrings:DefaultConnection в appsettings).</li>
+                        </ul>
+                        Проверете също: дали Monitor е конфигуриран с правилен ServiceUrl и дали <code>POST /api/logs/input</code> е достъпен.
+                    </div>
+                }
+                else
+                {
+                    <div class="alert alert-secondary mt-3 mb-0">
+                        За дата @dateDisplay в InputLogs има общо <strong>@totalInputLogsForDay</strong> записа, но нито един не отговаря на филтъра (потребител <strong>@username</strong>, приложение съдържа „<strong>@app</strong>“).<br/>
+                        Потребители с данни за този ден: <code>@string.Join(", ", usernamesWithData)</code>.<br/>
+                        Приложения с данни: <code>@string.Join(", ", appsWithData)</code>.<br/>
+                        Ако в Performance виждате потребител „IIS-SERVER$“, това обикновено е машината; реалните клавиши/кликове се записват под името на <strong>логнатия потребител</strong> (от explorer.exe). Изберете от списъка горе потребител с данни или отворете <a href="/input-logs?dateFrom=@dateStr&dateTo=@dateStr">Въвеждане и кликове</a> и филтрирайте по дата.
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>

@@ -45,6 +45,18 @@ public class ApplicationDbContext : DbContext
     // Login събития
     public DbSet<LoginEventEntity> LoginEvents { get; set; }
 
+    // Блокирани IP адреси (брутфорс защита)
+    public DbSet<BlockedIpEntity> BlockedIps { get; set; }
+
+    // Имейл активност (Outlook мониторинг)
+    public DbSet<EmailActivityEntity> EmailActivities { get; set; }
+
+    // Посетени уебсайтове (от Monitor или browser extension)
+    public DbSet<VisitedWebsiteEntity> VisitedWebsites { get; set; }
+
+    // Въвеждане от клавиатура и кликове (от Monitor input capture)
+    public DbSet<InputLogEntity> InputLogs { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -127,6 +139,33 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => new { e.Username, e.MachineName, e.RecordedAt });
             entity.Property(e => e.Username).HasMaxLength(255).IsRequired();
             entity.Property(e => e.MachineName).HasMaxLength(255).IsRequired();
+        });
+
+        // VisitedWebsite конфигурация
+        modelBuilder.Entity<VisitedWebsiteEntity>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.Username, e.MachineName, e.VisitedAt });
+            entity.Property(e => e.Username).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.MachineName).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.Url).HasMaxLength(2000).IsRequired();
+            entity.Property(e => e.Title).HasMaxLength(500);
+            entity.Property(e => e.Browser).HasMaxLength(100).IsRequired();
+        });
+
+        // InputLog конфигурация (клавиши и кликове)
+        modelBuilder.Entity<InputLogEntity>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.MachineName, e.Timestamp });
+            entity.HasIndex(e => new { e.Username, e.Timestamp });
+            entity.Property(e => e.MachineName).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.Username).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.Domain).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.LogType).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.ApplicationName).HasMaxLength(500);
+            entity.Property(e => e.WindowTitle).HasMaxLength(1000);
+            entity.Property(e => e.Data).HasMaxLength(2000).IsRequired();
         });
 
         // AuthSession конфигурация
@@ -243,6 +282,31 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.LoginMethod).HasMaxLength(50).IsRequired();
             entity.Property(e => e.SessionId).HasMaxLength(100);
             entity.Property(e => e.IpAddress).HasMaxLength(50);
+        });
+
+        // BlockedIp конфигурация
+        modelBuilder.Entity<BlockedIpEntity>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.IpAddress);
+            entity.Property(e => e.IpAddress).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.UnblockedBy).HasMaxLength(255);
+            entity.Property(e => e.UnblockReason).HasMaxLength(500);
+        });
+
+        // EmailActivity конфигурация
+        modelBuilder.Entity<EmailActivityEntity>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.Username, e.MachineName, e.EventTime });
+            entity.HasIndex(e => e.EventType);
+            entity.Property(e => e.Username).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.Domain).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.MachineName).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.Subject).HasMaxLength(1000).IsRequired();
+            entity.Property(e => e.SenderOrRecipient).HasMaxLength(500);
+            entity.Property(e => e.EventType).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.DetectionSource).HasMaxLength(100);
         });
     }
 }

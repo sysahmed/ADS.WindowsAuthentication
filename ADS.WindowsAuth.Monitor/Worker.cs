@@ -3,6 +3,10 @@ using ADS.WindowsAuth.Core.Services;
 using System.Diagnostics;
 using System.Net.Http.Json;
 using System.Management;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Runtime.InteropServices;
 
 namespace ADS.WindowsAuth.Monitor;
 
@@ -13,13 +17,80 @@ public class Worker : BackgroundService
     private readonly IPolicyService _policyService;
     private readonly IConnectionService _connectionService;
     private readonly ILoggerService _loggerService;
+    private readonly IOfflineEventBuffer? _offlineBuffer;
     private readonly ServiceConfiguration _serviceConfig;
     private readonly IWindowsFirewallService _firewallService;
     private readonly HttpClient _httpClient;
     private readonly Services.ServiceProtection _serviceProtection;
+    private readonly Services.RemoteDesktopHostService _rdHostService;
     private readonly string _machineName;
     private readonly string _username;
     private readonly string _domain;
+
+    /// <summary>
+    /// Активно логнат потребител (от explorer.exe). При работа като сервис Environment.UserName е "SYSTEM".
+    /// </summary>
+    private volatile string _effectiveUsername = "";
+    private volatile string _effectiveDomain = "";
+
+    // Политики, заредени от API-то – споделени между CheckPolicies и MonitorProcesses
+    private List<ADS.WindowsAuth.Core.Models.Policy> _activePolicies = new();
+
+    private string EffectiveUsername => !string.IsNullOrEmpty(_effectiveUsername) ? _effectiveUsername : _username;
+    private string EffectiveDomain => !string.IsNullOrEmpty(_effectiveDomain) ? _effectiveDomain : _domain;
+
+    /// <summary>
+    /// Обновява _effectiveUsername/_effectiveDomain от owner на explorer.exe (активно логнат потребител).
+    /// </summary>
+    private void RefreshLoggedInUser()
+    {
+        try
+        {
+            using var searcher = new ManagementObjectSearcher("SELECT ProcessId FROM Win32_Process WHERE Name='explorer.exe'");
+            foreach (ManagementObject obj in searcher.Get())
+            {
+                string[] argList = new string[] { string.Empty, string.Empty };
+                try
+                {
+                    if (Convert.ToInt32(obj.InvokeMethod("GetOwner", argList)) == 0)
+                    {
+                        string dom = argList[0]?.Trim() ?? "";
+                        string usr = argList[1]?.Trim() ?? "";
+                        if (!string.IsNullOrEmpty(usr) && !string.Equals(usr, "SYSTEM", StringComparison.OrdinalIgnoreCase))
+                        {
+                            _effectiveDomain = dom;
+                            _effectiveUsername = usr;
+                            return;
+                        }
+                    }
+                }
+                catch { }
+            }
+        }
+        catch { }
+        _effectiveUsername = "";
+        _effectiveDomain = "";
+    }
+
+    /// <summary>
+    /// Извлича стойност от event log съобщение. Поддръжка за EN и BG етикети.
+    /// </summary>
+    private static string ExtractFromEventMessageMultiLang(string message, string labelEn, string labelBg)
+    {
+        int idx = message.IndexOf(labelEn, StringComparison.OrdinalIgnoreCase);
+        if (idx < 0)
+            idx = message.IndexOf(labelBg, StringComparison.OrdinalIgnoreCase);
+        if (idx < 0)
+            return "";
+
+        int labelLen = message.AsSpan(idx).StartsWith(labelEn, StringComparison.OrdinalIgnoreCase) ? labelEn.Length : labelBg.Length;
+        int start = idx + labelLen;
+        while (start < message.Length && (message[start] == ' ' || message[start] == '\t'))
+            start++;
+        int end = message.IndexOfAny(new[] { '\r', '\n' }, start);
+        if (end < 0) end = message.Length;
+        return message.Substring(start, end - start).Trim();
+    }
 
     private Dictionary<int, DateTime> _processStartTimes = new();
     private Dictionary<int, string> _processNames = new();
@@ -28,20 +99,102 @@ public class Worker : BackgroundService
     private DateTime _lastSystemInfoSend = DateTime.MinValue;
     private HashSet<string> _knownUsbDevices = new();
 
+    // ── Win32 P/Invoke за активен прозорец ──────────────────────────────────
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = false)]
+    private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+
+    [DllImport("user32.dll", SetLastError = false)]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int nIndex);
+
+    // Office процеси, от чийто command line извличаме отворения файл
+    private static readonly HashSet<string> OfficeProcesses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "EXCEL", "WINWORD", "POWERPNT", "MSPUB", "MSACCESS", "VISIO", "ONENOTE", "OUTLOOK"
+    };
+
+    // Системни/фонови процеси, които НЕ се следят (шум без бизнес стойност)
+    private static readonly HashSet<string> SystemProcesses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "svchost", "lsass", "csrss", "smss", "wininit", "winlogon", "services", "lsm",
+        "fontdrvhost", "RuntimeBroker", "SearchIndexer", "WmiPrvSE", "spoolsv", "MsMpEng",
+        "NisSrv", "SecurityHealthService", "SgrmBroker", "audiodg", "dwm", "conhost",
+        "dllhost", "taskhostw", "sihost", "ctfmon", "dasHost", "sppsvc", "msdtc",
+        "LsaIso", "TextInputHost", "ShellExperienceHost", "StartMenuExperienceHost",
+        "SearchHost", "SearchApp", "PhoneExperienceHost", "SystemSettings",
+        "Registry", "System", "Idle", "AggregatorHost", "WUDFHost",
+        "SpeechRuntime", "UserOOBEBroker", "WerFault", "wermgr", "PerfWatson2"
+    };
+
+    // ── Помощни методи за file-open detection ───────────────────────────────
+
+    /// <summary>
+    /// Извлича пълния команден ред на процес чрез WMI.
+    /// </summary>
+    private static string GetProcessCommandLine(int processId)
+    {
+        try
+        {
+            using var searcher = new ManagementObjectSearcher(
+                $"SELECT CommandLine FROM Win32_Process WHERE ProcessId={processId}");
+            foreach (ManagementObject obj in searcher.Get())
+                return obj["CommandLine"]?.ToString() ?? "";
+        }
+        catch { }
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// Опитва да извади абсолютен файлов път от командния ред на процес.
+    /// Поддържа quoted и unquoted пътища след EXE-то.
+    /// </summary>
+    private static string ExtractFileFromCommandLine(string commandLine)
+    {
+        if (string.IsNullOrWhiteSpace(commandLine)) return string.Empty;
+        try
+        {
+            // Quoted paths first: "C:\path\file.ext"
+            var quoted = Regex.Matches(commandLine, @"""([^""]+\.[a-zA-Z0-9]{2,6})""");
+            foreach (Match m in quoted)
+            {
+                var p = m.Groups[1].Value;
+                if (File.Exists(p)) return p;
+            }
+            // Unquoted paths after the first token (skip the exe itself)
+            var parts = commandLine.Split(' ');
+            for (int i = 1; i < parts.Length; i++)
+            {
+                var p = parts[i].Trim('"');
+                if (!p.StartsWith("/") && !p.StartsWith("-") &&
+                    p.Contains('.') && p.Contains('\\') && File.Exists(p))
+                    return p;
+            }
+        }
+        catch { }
+        return string.Empty;
+    }
+
     public Worker(ILogger<Worker> logger, IActivityMonitorService activityMonitor, 
                  IPolicyService policyService, IConnectionService connectionService,
-                 ILoggerService loggerService, ServiceConfiguration serviceConfig,
-                 IWindowsFirewallService firewallService)
+                 ILoggerService loggerService, IOfflineEventBuffer? offlineBuffer,
+                 ServiceConfiguration serviceConfig, IWindowsFirewallService firewallService)
     {
         _logger = logger;
         _activityMonitor = activityMonitor;
         _policyService = policyService;
         _connectionService = connectionService;
         _loggerService = loggerService;
+        _offlineBuffer = offlineBuffer;
         _serviceConfig = serviceConfig;
         _firewallService = firewallService;
         _serviceProtection = new Services.ServiceProtection(loggerService);
-        
+        _rdHostService = new Services.RemoteDesktopHostService(serviceConfig.ServiceUrl, loggerService);
+
         _httpClient = new HttpClient();
         if (!string.IsNullOrEmpty(_serviceConfig.ServiceUrl))
         {
@@ -53,10 +206,45 @@ public class Worker : BackgroundService
                 _httpClient.DefaultRequestHeaders.Add("X-API-Key", _serviceConfig.ApiKey);
             }
         }
-        
+
         _machineName = Environment.MachineName;
         _username = Environment.UserName;
         _domain = Environment.UserDomainName;
+    }
+
+    /// <summary>
+    /// Изпраща към API или буферира локално при грешка. Събитията се прехвърлят при възстановяване на връзката.
+    /// </summary>
+    private async Task SendOrBufferAsync(string endpoint, object payload, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (_httpClient.BaseAddress == null)
+            {
+                _logger.LogDebug("Няма BaseAddress - буфериране на {Endpoint}", endpoint);
+                if (_offlineBuffer != null)
+                {
+                    var json = JsonSerializer.Serialize(payload);
+                    _offlineBuffer.Enqueue(endpoint, json);
+                }
+                return;
+            }
+
+            var response = await _httpClient.PostAsJsonAsync(endpoint, payload, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("API отговори с {StatusCode} за {Endpoint}", response.StatusCode, endpoint);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Грешка при изпращане към {Endpoint} - буфериране", endpoint);
+            if (_offlineBuffer != null)
+            {
+                var json = JsonSerializer.Serialize(payload);
+                _offlineBuffer.Enqueue(endpoint, json);
+            }
+        }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -72,17 +260,43 @@ public class Worker : BackgroundService
         var clientInstaller = new Services.ClientInstaller(
             _loggerService,
             AppDomain.CurrentDomain.BaseDirectory);
-        
-        // Първоначална инсталация при стартиране
-        try
+
+        // ВАЖНО: Бавните операции (CheckAndInstall, VPN, Connection) се изпълняват във фонов режим,
+        // за да избегнем Error 1053 (service did not respond in time). Windows дава ~30 сек за старт.
+        _ = Task.Run(async () =>
         {
-            credentialProviderInstaller.CheckAndInstall();
-            clientInstaller.CheckAndInstall();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Грешка при първоначална инсталация");
-        }
+            try
+            {
+                // Първоначална инсталация при стартиране
+                try
+                {
+                    credentialProviderInstaller.CheckAndInstall();
+                    clientInstaller.CheckAndInstall();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Грешка при първоначална инсталация");
+                }
+
+                // Проверка за VPN ако е изискван
+                if (_serviceConfig.RequireVpn && !_connectionService.IsVpnConnected())
+                {
+                    _logger.LogWarning("VPN връзката е изисквана, но не е активна. Очакване на VPN...");
+                    while (!_connectionService.IsVpnConnected() && !stoppingToken.IsCancellationRequested)
+                        await Task.Delay(5000, stoppingToken);
+                    _logger.LogInformation("VPN връзката е установена");
+                }
+
+                // Проверка за връзка със сървъра
+                bool hasConnection = await _connectionService.CheckConnectionAsync();
+                if (!hasConnection && !_serviceConfig.OfflineMode)
+                    _logger.LogWarning("Няма връзка със сървъра. Работа в offline режим.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Грешка при фонов старт");
+            }
+        }, stoppingToken);
 
         // Периодична проверка (на всеки 5 минути)
         _ = Task.Run(async () =>
@@ -92,76 +306,65 @@ public class Worker : BackgroundService
                 try
                 {
                     await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
-                    
-                    if (stoppingToken.IsCancellationRequested)
-                        break;
-                    
+                    if (stoppingToken.IsCancellationRequested) break;
                     credentialProviderInstaller.CheckAndInstall();
                     clientInstaller.CheckAndInstall();
                 }
-                catch (OperationCanceledException)
-                {
-                    // Нормално при спиране на сервиса
-                    break;
-                }
+                catch (OperationCanceledException) { break; }
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Грешка при проверка на инсталации");
                 }
-                
-                await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
             }
         }, stoppingToken);
 
-        // Проверка за VPN ако е изискван
-        if (_serviceConfig.RequireVpn && !_connectionService.IsVpnConnected())
+        // Фаза 1: Вземане на активно логнат потребител (вместо SYSTEM при работа като сервис)
+        RefreshLoggedInUser();
+        _ = Task.Run(async () =>
         {
-            _logger.LogWarning("VPN връзката е изисквана, но не е активна. Очакване на VPN...");
-            
-            // Очакване на VPN връзка
-            while (!_connectionService.IsVpnConnected() && !stoppingToken.IsCancellationRequested)
+            while (!stoppingToken.IsCancellationRequested)
             {
-                await Task.Delay(5000, stoppingToken);
+                await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+                if (!stoppingToken.IsCancellationRequested) RefreshLoggedInUser();
             }
-            
-            _logger.LogInformation("VPN връзката е установена");
-        }
+        }, stoppingToken);
 
-        // Проверка за връзка със сървъра
-        bool hasConnection = await _connectionService.CheckConnectionAsync();
-        if (!hasConnection && !_serviceConfig.OfflineMode)
-        {
-            _logger.LogWarning("Няма връзка със сървъра. Работа в offline режим.");
-        }
-
-        // Започване на мониторинг
-        _activityMonitor.StartMonitoring(_username, _domain, _machineName);
+        // Започване на мониторинг (с реалния потребител, ако е логнат)
+        _activityMonitor.StartMonitoring(EffectiveUsername, EffectiveDomain, _machineName);
         
         // СТЪПКА 3: Стартиране на защита на сервиса
         _serviceProtection.StartMonitoring();
-        
-        // Тестово логване за проверка на връзката с API
-        _loggerService.LogInfo($"Monitor Service стартиран на {_machineName} за потребител {_username}@{_domain}");
-        _loggerService.LogInfo($"API URL: {_serviceConfig.ServiceUrl}");
-        _loggerService.LogInfo($"Връзка с API: {(hasConnection ? "Успешна" : "Неуспешна")}");
-        
-        // Изпращане на заявка към API (ако има връзка)
-        if (hasConnection)
+
+        // Стартиране на Remote Desktop Host в потребителската сесия
+        _rdHostService.EnsureRunning();
+
+        // Периодичен watchdog – рестартира RemoteDesktopHost.exe ако падне
+        _ = Task.Run(async () =>
         {
-            try
+            while (!stoppingToken.IsCancellationRequested)
             {
-                await _httpClient.PostAsJsonAsync("/api/activity/start", new
+                try
                 {
-                    Username = _username,
-                    Domain = _domain,
-                    MachineName = _machineName
-                }, stoppingToken);
+                    await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+                    if (!stoppingToken.IsCancellationRequested)
+                        _rdHostService.RestartIfDead();
+                }
+                catch (OperationCanceledException) { break; }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "[RD Host] Watchdog грешка: {Message}", ex.Message);
+                }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Грешка при изпращане на заявка за стартиране на мониторинг");
-            }
-        }
+        }, stoppingToken);
+
+        // InputCapture (клавиши/кликове) се изпълнява в RemoteDesktopHost – Monitor го стартира в потребителска сесия
+
+        // Тестово логване за проверка на връзката с API
+        _loggerService.LogInfo($"Monitor Service стартиран на {_machineName} за потребител {EffectiveUsername}@{EffectiveDomain}");
+        _loggerService.LogInfo($"API URL: {_serviceConfig.ServiceUrl}");
+        
+        // Изпращане на заявка към API (при неуспех се буферира за sync при връзка)
+        await SendOrBufferAsync("/api/activity/start", new { Username = EffectiveUsername, Domain = EffectiveDomain, MachineName = _machineName }, stoppingToken);
 
         // Стартиране на различни мониторинг задачи
         var processMonitorTask = MonitorProcesses(stoppingToken);
@@ -177,10 +380,14 @@ public class Worker : BackgroundService
         var vpnMonitorTask = MonitorVpnSoftware(stoppingToken); // СТЪПКА 1: VPN мониторинг
         var dnsMonitorTask = MonitorDnsChanges(stoppingToken); // СТЪПКА 2: DNS мониторинг
         var loginMonitorTask = MonitorUserSessions(stoppingToken); // Мониторинг на user login събития
+        var activeWindowTask = MonitorActiveWindow(stoppingToken); // Активен прозорец – focus time
+        var outlookTask = MonitorOutlookActivity(stoppingToken);   // Outlook имейл мониторинг
+        var screenshotTask = MonitorScreenshots(stoppingToken);    // Скрийншотове (ако е включено)
+        var machineSnapshotTask = SendMachineSnapshot(stoppingToken); // Snapshot за уеб мониторинг
 
         await Task.WhenAll(
-            processMonitorTask, 
-            screenTimeTask, 
+            processMonitorTask,
+            screenTimeTask,
             policyCheckTask,
             networkMonitorTask,
             systemInfoTask,
@@ -191,7 +398,11 @@ public class Worker : BackgroundService
             policiesSyncTask,
             vpnMonitorTask,
             dnsMonitorTask,
-            loginMonitorTask
+            loginMonitorTask,
+            activeWindowTask,
+            outlookTask,
+            screenshotTask,
+            machineSnapshotTask
         );
     }
 
@@ -207,13 +418,32 @@ public class Worker : BackgroundService
                 {
                     try
                     {
-                        if (string.IsNullOrEmpty(process.MainWindowTitle) && 
-                            process.ProcessName != "explorer" && 
-                            process.ProcessName != "dwm")
+                        string processName = process.ProcessName;
+
+                        // Пропускаме системни/фонови процеси без бизнес стойност
+                        if (SystemProcesses.Contains(processName))
                             continue;
 
+                        // Пропускаме процеси без прозорец И без бизнес EXE (напр. svchost клонинги)
+                        // Изключение: ако има MainWindowTitle – определено е потребителско приложение
+                        // Изключение: ако е в OfficeProcesses – може да няма видим прозорец при стартиране
+                        bool hasWindow = !string.IsNullOrEmpty(process.MainWindowTitle);
+                        bool isBusinessApp = OfficeProcesses.Contains(processName.ToUpper());
+                        if (!hasWindow && !isBusinessApp)
+                        {
+                            // Опит да се провери дали изпълнимият файл е извън Windows папките
+                            try
+                            {
+                                string? exePath = process.MainModule?.FileName;
+                                if (exePath == null) continue;
+                                string winDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+                                if (exePath.StartsWith(winDir, StringComparison.OrdinalIgnoreCase))
+                                    continue;
+                            }
+                            catch { continue; } // Access denied = системен процес
+                        }
+
                         int processId = process.Id;
-                        string processName = process.ProcessName;
                         string executablePath = process.MainModule?.FileName ?? "";
 
                         // Проверка дали процесът е нов
@@ -222,31 +452,65 @@ public class Worker : BackgroundService
                             _processStartTimes[processId] = DateTime.Now;
                             _processNames[processId] = processName;
                             
-                            // Проверка дали приложението е блокирано
-                            if (_policyService.IsApplicationBlocked(_machineName, _username, processName))
+                            // Проверка дали приложението е блокирано (ползваме кеша от API)
+                            bool appBlocked = _activePolicies.Any(p => p.IsActive && (
+                                (p.BlockedApplications != null && p.BlockedApplications.Any(b =>
+                                    processName.Contains(b, StringComparison.OrdinalIgnoreCase) ||
+                                    b.Contains(processName, StringComparison.OrdinalIgnoreCase))) ||
+                                (p.AppWhitelistMode && p.AllowedApplications != null && p.AllowedApplications.Count > 0 &&
+                                    !p.AllowedApplications.Any(a =>
+                                        processName.Contains(a, StringComparison.OrdinalIgnoreCase) ||
+                                        a.Contains(processName, StringComparison.OrdinalIgnoreCase)))
+                            ));
+                            if (appBlocked)
                             {
-                                _logger.LogWarning("Опит за стартиране на блокирано приложение: {ProcessName}", processName);
-                                process.Kill();
+                                _loggerService.LogWarning($"Блокирано приложение спряно: {processName}");
+                                try { process.Kill(); } catch { }
                                 continue;
                             }
 
-                            _activityMonitor.RegisterApplicationStart(_username, _machineName, processName, executablePath);
-                            
-                            // Изпращане към API
-                            try
+                            _activityMonitor.RegisterApplicationStart(EffectiveUsername, _machineName, processName, executablePath);
+
+                            // Изпращане към API или буфериране при прекъсната връзка
+                            await SendOrBufferAsync("/api/activity/application/start", new
                             {
-                                await _httpClient.PostAsJsonAsync("/api/activity/application/start", new
+                                Username = EffectiveUsername,
+                                Domain = EffectiveDomain,
+                                MachineName = _machineName,
+                                ApplicationName = processName,
+                                ExecutablePath = executablePath,
+                                ProcessId = processId,
+                                Timestamp = DateTime.Now
+                            }, cancellationToken);
+
+                            // ── Засичане на файл отворен от Office приложение ──────────────
+                            if (OfficeProcesses.Contains(processName.ToUpper()))
+                            {
+                                try
                                 {
-                                    Username = _username,
-                                    Domain = _domain,
-                                    MachineName = _machineName,
-                                    ApplicationName = processName,
-                                    ExecutablePath = executablePath,
-                                    ProcessId = processId,
-                                    Timestamp = DateTime.Now
-                                }, cancellationToken);
+                                    var cmdLine = GetProcessCommandLine(processId);
+                                    var openedFile = ExtractFileFromCommandLine(cmdLine);
+                                    if (!string.IsNullOrEmpty(openedFile))
+                                    {
+                                        _logger.LogInformation("{App} отвори файл: {File}", processName, openedFile);
+                                        await SendOrBufferAsync("/api/activity/file-open", new
+                                        {
+                                            Username = EffectiveUsername,
+                                            Domain = EffectiveDomain,
+                                            MachineName = _machineName,
+                                            FilePath = openedFile,
+                                            FileName = Path.GetFileName(openedFile),
+                                            ApplicationName = processName,
+                                            EventType = "Open",
+                                            Timestamp = DateTime.Now
+                                        }, cancellationToken);
+                                    }
+                                }
+                                catch (Exception fileEx)
+                                {
+                                    _logger.LogDebug(fileEx, "Грешка при извличане на файл от {App}", processName);
+                                }
                             }
-                            catch { }
                         }
                     }
                     catch (Exception ex)
@@ -269,20 +533,16 @@ public class Worker : BackgroundService
                     _processStartTimes.Remove(closedId);
                     _processNames.Remove(closedId);
                     
-                    // Изпращане на информация за затворен процес
+                    // Изпращане на информация за затворен процес или буфериране
                     if (!string.IsNullOrEmpty(processName))
                     {
-                        try
+                        await SendOrBufferAsync("/api/activity/application/stop", new
                         {
-                            await _httpClient.PostAsJsonAsync("/api/activity/application/stop", new
-                            {
-                                Username = _username,
-                                MachineName = _machineName,
-                                ApplicationName = processName,
-                                DurationSeconds = duration
-                            }, cancellationToken);
-                        }
-                        catch { }
+                            Username = EffectiveUsername,
+                            MachineName = _machineName,
+                            ApplicationName = processName,
+                            DurationSeconds = duration
+                        }, cancellationToken);
                     }
                 }
             }
@@ -304,19 +564,15 @@ public class Worker : BackgroundService
             try
             {
                 int screenTimeSeconds = (int)(DateTime.Now - sessionStart).TotalSeconds;
-                _activityMonitor.UpdateScreenTime(_username, _machineName, screenTimeSeconds);
+                _activityMonitor.UpdateScreenTime(EffectiveUsername, _machineName, screenTimeSeconds);
                 
-                // Изпращане към API
-                try
+                // Изпращане към API или буфериране
+                await SendOrBufferAsync("/api/activity/screentime/update", new
                 {
-                    await _httpClient.PostAsJsonAsync("/api/activity/screentime/update", new
-                    {
-                        Username = _username,
-                        MachineName = _machineName,
-                        Seconds = screenTimeSeconds
-                    }, cancellationToken);
-                }
-                catch { }
+                    Username = EffectiveUsername,
+                    MachineName = _machineName,
+                    Seconds = screenTimeSeconds
+                }, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -346,13 +602,8 @@ public class Worker : BackgroundService
                     }
                 }
 
-                // Проверка за връзка със сървъра
-                bool hasConnection = await _connectionService.CheckConnectionAsync();
-                if (!hasConnection && _connectionService.IsOfflineMode())
-                {
-                    // Синхронизация на offline данни при възстановяване на връзката
-                    await _connectionService.SyncOfflineDataAsync();
-                }
+                // Опит за синхронизация на буферирани събития при възстановена връзка
+                await _connectionService.SyncOfflineDataAsync(_httpClient);
 
                 // Четене на политики от API-то
                 List<Policy> policies = new();
@@ -360,7 +611,7 @@ public class Worker : BackgroundService
                 {
                     try
                     {
-                        var apiPolicies = await _httpClient.GetFromJsonAsync<List<Policy>>($"/api/Policy/machine/{_machineName}/user/{_username}", cancellationToken);
+                        var apiPolicies = await _httpClient.GetFromJsonAsync<List<Policy>>($"/api/Policy/machine/{_machineName}/user/{EffectiveUsername}", cancellationToken);
                         if (apiPolicies != null)
                         {
                             policies = apiPolicies;
@@ -369,20 +620,23 @@ public class Worker : BackgroundService
                     catch
                     {
                         // Fallback към локалния PolicyService
-                        policies = _policyService.GetActivePoliciesForMachine(_machineName, _username);
+                        policies = _policyService.GetActivePoliciesForMachine(_machineName, EffectiveUsername);
                     }
                 }
                 else
                 {
                     // Използваме локалния PolicyService ако няма API URL
-                    policies = _policyService.GetActivePoliciesForMachine(_machineName, _username);
+                    policies = _policyService.GetActivePoliciesForMachine(_machineName, EffectiveUsername);
                 }
+
+                // Обновяване на споделения кеш – MonitorProcesses го ползва за kill на блокирани apps
+                _activePolicies = policies;
                 
                 foreach (var policy in policies)
                 {
                     if (policy.MaxScreenTimeSeconds > 0)
                     {
-                        var activity = _activityMonitor.GetUserActivity(_username, _machineName);
+                        var activity = _activityMonitor.GetUserActivity(EffectiveUsername, _machineName);
                         if (activity != null && activity.ScreenTimeSeconds >= policy.MaxScreenTimeSeconds)
                         {
                             _logger.LogWarning("Достигнато максимално време на екрана: {Seconds} секунди", activity.ScreenTimeSeconds);
@@ -405,17 +659,22 @@ public class Worker : BackgroundService
         _logger.LogInformation("Worker спира...");
         
         // Спиране на мониторинг
-        _activityMonitor.StopMonitoring(_username, _machineName);
+        _activityMonitor.StopMonitoring(EffectiveUsername, _machineName);
         
+        // Спиране на Remote Desktop Host
+        _rdHostService.StopIfRunning();
+
         // СТЪПКА 3: Спиране на защита на сервиса
         _serviceProtection.StopMonitoring();
-        
+
+        // InputCapture е в RemoteDesktopHost – при StopAsync го спираме чрез KillExistingInstances
+
         // Изпращане на заявка към API
         try
         {
-            await _httpClient.PostAsJsonAsync("/api/activity/stop", new
+            await SendOrBufferAsync("/api/activity/stop", new
             {
-                Username = _username,
+                Username = EffectiveUsername,
                 MachineName = _machineName
             }, cancellationToken);
         }
@@ -445,10 +704,10 @@ public class Worker : BackgroundService
 
                 try
                 {
-                    await _httpClient.PostAsJsonAsync("/api/activity/network", new
+                    await SendOrBufferAsync("/api/activity/network", new
                     {
-                        Username = _username,
-                        Domain = _domain,
+                        Username = EffectiveUsername,
+                        Domain = EffectiveDomain,
                         MachineName = _machineName,
                         NetworkInterfaces = activeConnections,
                         Timestamp = DateTime.Now
@@ -476,8 +735,8 @@ public class Worker : BackgroundService
                     var systemInfo = new
                     {
                         MachineName = _machineName,
-                        Username = _username,
-                        Domain = _domain,
+                        Username = EffectiveUsername,
+                        Domain = EffectiveDomain,
                         OsVersion = Environment.OSVersion.ToString(),
                         ProcessorCount = Environment.ProcessorCount,
                         TotalMemory = GC.GetTotalMemory(false),
@@ -487,10 +746,10 @@ public class Worker : BackgroundService
 
                     try
                     {
-                        await _httpClient.PostAsJsonAsync("/api/activity/system", new
+                        await SendOrBufferAsync("/api/activity/system", new
                         {
-                            Username = _username,
-                            Domain = _domain,
+                            Username = EffectiveUsername,
+                            Domain = EffectiveDomain,
                             MachineName = _machineName,
                             SystemInfo = systemInfo,
                             Timestamp = DateTime.Now
@@ -548,10 +807,10 @@ public class Worker : BackgroundService
                     {
                         try
                         {
-                            await _httpClient.PostAsJsonAsync("/api/activity/usb", new
+                            await SendOrBufferAsync("/api/activity/usb", new
                             {
-                                Username = _username,
-                                Domain = _domain,
+                                Username = EffectiveUsername,
+                                Domain = EffectiveDomain,
                                 MachineName = _machineName,
                                 UsbDevices = usbDevices,
                                 Timestamp = DateTime.Now
@@ -611,10 +870,10 @@ public class Worker : BackgroundService
                 {
                     try
                     {
-                        await _httpClient.PostAsJsonAsync("/api/activity/files", new
+                        await SendOrBufferAsync("/api/activity/files", new
                         {
-                            Username = _username,
-                            Domain = _domain,
+                            Username = EffectiveUsername,
+                            Domain = EffectiveDomain,
                             MachineName = _machineName,
                             RecentFiles = recentFiles,
                             Timestamp = DateTime.Now
@@ -652,7 +911,7 @@ public class Worker : BackgroundService
                 {
                     try
                     {
-                        var apiPolicies = await _httpClient.GetFromJsonAsync<List<Policy>>($"/api/Policy/machine/{_machineName}/user/{_username}", cancellationToken);
+                        var apiPolicies = await _httpClient.GetFromJsonAsync<List<Policy>>($"/api/Policy/machine/{_machineName}/user/{EffectiveUsername}", cancellationToken);
                         if (apiPolicies != null && apiPolicies.Any())
                         {
                             foreach (var policy in apiPolicies)
@@ -677,7 +936,7 @@ public class Worker : BackgroundService
                         // Fallback към локалния PolicyService само ако API-то не е достъпно
                         try
                         {
-                            var policies = _policyService.GetActivePoliciesForMachine(_machineName, _username);
+                            var policies = _policyService.GetActivePoliciesForMachine(_machineName, EffectiveUsername);
                             foreach (var policy in policies)
                             {
                                 foreach (var blockedSite in policy.BlockedWebsites)
@@ -814,11 +1073,11 @@ public class Worker : BackgroundService
                 {
                     if (_httpClient.BaseAddress != null)
                     {
-                        await _httpClient.PostAsJsonAsync("/api/logs/upload", new
+                        await SendOrBufferAsync("/api/logs/upload", new
                         {
                             MachineName = _machineName,
-                            Username = _username,
-                            Domain = _domain,
+                            Username = EffectiveUsername,
+                            Domain = EffectiveDomain,
                             Level = "WARNING",
                             Message = $"Опит за заобикаляне на блокировки: Липсват блокировки за домейни: {string.Join(", ", missingBlocks)}",
                             Timestamp = DateTime.Now,
@@ -1003,6 +1262,8 @@ public class Worker : BackgroundService
                             _serviceConfig.ConnectionTimeout = response.ConnectionTimeout;
                             _serviceConfig.RetryInterval = response.RetryInterval;
                             _serviceConfig.MaxRetries = response.MaxRetries;
+                            _serviceConfig.ScreenshotEnabled = response.ScreenshotEnabled;
+                            _serviceConfig.ScreenshotIntervalMinutes = response.ScreenshotIntervalMinutes;
 
                             // Обновяване на HttpClient
                             if (!string.IsNullOrEmpty(_serviceConfig.ServiceUrl))
@@ -1099,11 +1360,11 @@ public class Worker : BackgroundService
                                 {
                                     if (_httpClient.BaseAddress != null)
                                     {
-                                        await _httpClient.PostAsJsonAsync("/api/logs/upload", new
+                                        await SendOrBufferAsync("/api/logs/upload", new
                                         {
                                             MachineName = _machineName,
-                                            Username = _username,
-                                            Domain = _domain,
+                                            Username = EffectiveUsername,
+                                            Domain = EffectiveDomain,
                                             Level = "WARNING",
                                             Message = $"VPN софтуер открит: {processName} (PID: {process.Id})",
                                             Timestamp = DateTime.Now,
@@ -1185,11 +1446,11 @@ public class Worker : BackgroundService
                     {
                         if (_httpClient.BaseAddress != null)
                         {
-                            await _httpClient.PostAsJsonAsync("/api/logs/upload", new
+                            await SendOrBufferAsync("/api/logs/upload", new
                             {
                                 MachineName = _machineName,
-                                Username = _username,
-                                Domain = _domain,
+                                Username = EffectiveUsername,
+                                Domain = EffectiveDomain,
                                 Level = "WARNING",
                                 Message = $"VPN интерфейси открити (не са разрешени): {string.Join(", ", vpnInterfaces)}",
                                 Timestamp = DateTime.Now,
@@ -1243,11 +1504,11 @@ public class Worker : BackgroundService
                                 {
                                     if (_httpClient.BaseAddress != null)
                                     {
-                                        await _httpClient.PostAsJsonAsync("/api/logs/upload", new
+                                        await SendOrBufferAsync("/api/logs/upload", new
                                         {
                                             MachineName = _machineName,
-                                            Username = _username,
-                                            Domain = _domain,
+                                            Username = EffectiveUsername,
+                                            Domain = EffectiveDomain,
                                             Level = "WARNING",
                                             Message = $"DNS промяна открита на {adapter.Key}: {lastDns} -> {adapter.Value}",
                                             Timestamp = DateTime.Now,
@@ -1396,11 +1657,11 @@ public class Worker : BackgroundService
                                 if (processedEvents.Contains(eventKey))
                                     continue;
 
-                                // Парсване на данните от събитието
+                                // Парсване на данните от събитието (многоезична поддръжка - EN/BG)
                                 string message = entry.Message ?? "";
-                                string username = ExtractValueFromEventMessage(message, "Account Name:");
-                                string domain = ExtractValueFromEventMessage(message, "Account Domain:");
-                                string logonTypeStr = ExtractValueFromEventMessage(message, "Logon Type:");
+                                string username = ExtractFromEventMessageMultiLang(message, "Account Name:", "Име на акаунт:");
+                                string domain = ExtractFromEventMessageMultiLang(message, "Account Domain:", "Домейн на акаунт:");
+                                string logonTypeStr = ExtractFromEventMessageMultiLang(message, "Logon Type:", "Тип влизане:");
                                 
                                 // Пропускаме системни акаунти
                                 if (string.IsNullOrEmpty(username) || 
@@ -1429,7 +1690,7 @@ public class Worker : BackgroundService
                                 {
                                     try
                                     {
-                                        await _httpClient.PostAsJsonAsync("/api/activity/login", new
+                                        await SendOrBufferAsync("/api/activity/login", new
                                         {
                                             Username = username,
                                             Domain = domain,
@@ -1489,6 +1750,309 @@ public class Worker : BackgroundService
         }
     }
 
+    // ════════════════════════════════════════════════════════════════════════
+    // Мониторинг на активен прозорец (focus time per application)
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Проследява кое приложение е активно (на фокус) и за колко секунди.
+    /// На всеки 5 минути изпраща натрупаното active-time към API.
+    /// Използва GetForegroundWindow() – работи при Interactive Service или
+    /// при приложение в потребителска сесия; при SYSTEM Session-0 връща 0.
+    /// </summary>
+    private async Task MonitorActiveWindow(CancellationToken cancellationToken)
+    {
+        var activeSeconds = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var lastAppName = "";
+        var lastFocusStart = DateTime.Now;
+        var lastSendTime = DateTime.Now;
+        var sb = new StringBuilder(512);
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                var hwnd = GetForegroundWindow();
+                string appName = "";
+
+                if (hwnd != IntPtr.Zero)
+                {
+                    uint pid = 0;
+                    GetWindowThreadProcessId(hwnd, out pid);
+                    if (pid > 0)
+                    {
+                        try
+                        {
+                            var proc = Process.GetProcessById((int)pid);
+                            appName = proc.ProcessName;
+                        }
+                        catch { }
+                    }
+                }
+
+                // Detect focus change
+                if (!string.IsNullOrEmpty(appName) && !string.Equals(appName, lastAppName, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!string.IsNullOrEmpty(lastAppName))
+                    {
+                        int secs = (int)(DateTime.Now - lastFocusStart).TotalSeconds;
+                        activeSeconds[lastAppName] = activeSeconds.GetValueOrDefault(lastAppName) + secs;
+                    }
+                    lastAppName = appName;
+                    lastFocusStart = DateTime.Now;
+                }
+
+                // Flush accumulated focus time every 5 minutes
+                if ((DateTime.Now - lastSendTime).TotalMinutes >= 5 && activeSeconds.Count > 0)
+                {
+                    foreach (var kv in activeSeconds.ToList())
+                    {
+                        if (kv.Value >= 5) // Skip apps with < 5 seconds
+                        {
+                            await SendOrBufferAsync("/api/activity/application/active-time", new
+                            {
+                                Username = EffectiveUsername,
+                                Domain = EffectiveDomain,
+                                MachineName = _machineName,
+                                ApplicationName = kv.Key,
+                                ActiveSeconds = kv.Value,
+                                Timestamp = DateTime.Now
+                            }, cancellationToken);
+                        }
+                    }
+                    activeSeconds.Clear();
+                    lastSendTime = DateTime.Now;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Грешка при мониторинг на активен прозорец");
+            }
+
+            await Task.Delay(1000, cancellationToken);
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Мониторинг на Outlook имейл активност чрез заглавие на прозорец
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Проследява заглавието на прозореца на Outlook за да засече:
+    ///   - Отваряне/четене на имейл     → EventType = "Received"
+    ///   - Отговаряне на имейл          → EventType = "Replied"
+    ///   - Препращане на имейл          → EventType = "Forwarded"
+    ///   - Съставяне на нов имейл       → EventType = "Composed"
+    ///
+    /// Ако GetForegroundWindow не дава резултат (Session 0), опитваме
+    /// Process.MainWindowTitle и GetWindowText върху MainWindowHandle.
+    /// </summary>
+    private async Task MonitorOutlookActivity(CancellationToken cancellationToken)
+    {
+        var seenEventKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var sb = new StringBuilder(1024);
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                var outlookProcs = Process.GetProcessesByName("OUTLOOK")
+                    .Concat(Process.GetProcessesByName("outlook"))
+                    .ToArray();
+
+                foreach (var proc in outlookProcs)
+                {
+                    try
+                    {
+                        // Try MainWindowTitle first (works in interactive sessions)
+                        string title = proc.MainWindowTitle;
+
+                        // Fallback: P/Invoke on MainWindowHandle (may work in some configs)
+                        if (string.IsNullOrWhiteSpace(title) && proc.MainWindowHandle != IntPtr.Zero)
+                        {
+                            sb.Clear();
+                            GetWindowText(proc.MainWindowHandle, sb, sb.Capacity);
+                            title = sb.ToString();
+                        }
+
+                        if (string.IsNullOrWhiteSpace(title))
+                            continue;
+
+                        ParseOutlookTitle(title, out string? eventType, out string? subject);
+
+                        if (eventType == null || subject == null)
+                            continue;
+
+                        subject = subject.Trim();
+                        if (subject.Length == 0) continue;
+
+                        string eventKey = $"{eventType}:{subject}";
+                        if (seenEventKeys.Contains(eventKey))
+                            continue;
+
+                        seenEventKeys.Add(eventKey);
+                        _logger.LogInformation("Outlook: {Type} '{Subject}'", eventType, subject);
+
+                        await SendOrBufferAsync("/api/activity/email", new
+                        {
+                            Username = EffectiveUsername,
+                            Domain = EffectiveDomain,
+                            MachineName = _machineName,
+                            Subject = subject,
+                            EventType = eventType,
+                            DetectionSource = "WindowTitle",
+                            Timestamp = DateTime.Now
+                        }, cancellationToken);
+                    }
+                    catch { }
+                }
+
+                // Prevent unbounded growth
+                if (seenEventKeys.Count > 300)
+                    seenEventKeys = new HashSet<string>(seenEventKeys.TakeLast(150), StringComparer.OrdinalIgnoreCase);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Грешка при мониторинг на Outlook");
+            }
+
+            await Task.Delay(3000, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Парсва заглавие на прозорец на Outlook и определя типа на събитието.
+    /// Примери:
+    ///   "Invoice - Message (HTML) - Microsoft Outlook"  → Received / "Invoice"
+    ///   "RE: Invoice - Message (HTML) - Microsoft Outlook" → Replied / "RE: Invoice"
+    ///   "FW: Invoice - Message (HTML) - Microsoft Outlook" → Forwarded / "FW: Invoice"
+    ///   "New Message - Message (HTML)"                  → Composed
+    /// </summary>
+    private static void ParseOutlookTitle(string title, out string? eventType, out string? subject)
+    {
+        eventType = null;
+        subject = null;
+
+        bool isReadingPane = title.Contains("- Microsoft Outlook", StringComparison.OrdinalIgnoreCase)
+                          || title.Contains("- Outlook", StringComparison.OrdinalIgnoreCase);
+        bool isMessageWindow = title.Contains("Message (HTML)", StringComparison.OrdinalIgnoreCase)
+                            || title.Contains("Message (Plain Text)", StringComparison.OrdinalIgnoreCase)
+                            || title.Contains("Message (Rich Text)", StringComparison.OrdinalIgnoreCase);
+
+        if (!isReadingPane && !isMessageWindow)
+            return;
+
+        // Extract the subject (everything before " - Message" or " - Microsoft Outlook")
+        var separators = new[] { " - Message (HTML)", " - Message (Plain Text)", " - Message (Rich Text)", " - Microsoft Outlook", " - Outlook" };
+        string subj = title;
+        foreach (var sep in separators)
+        {
+            int idx = subj.IndexOf(sep, StringComparison.OrdinalIgnoreCase);
+            if (idx >= 0) { subj = subj.Substring(0, idx); break; }
+        }
+
+        if (string.IsNullOrWhiteSpace(subj)) return;
+
+        if (subj.StartsWith("RE:", StringComparison.OrdinalIgnoreCase))
+        {
+            eventType = "Replied";
+            subject = subj;
+        }
+        else if (subj.StartsWith("FW:", StringComparison.OrdinalIgnoreCase) ||
+                 subj.StartsWith("Fwd:", StringComparison.OrdinalIgnoreCase))
+        {
+            eventType = "Forwarded";
+            subject = subj;
+        }
+        else if (isMessageWindow && !isReadingPane)
+        {
+            // Composing a new message (no "Microsoft Outlook" suffix in title)
+            eventType = "Composed";
+            subject = subj;
+        }
+        else if (isMessageWindow)
+        {
+            eventType = "Received";
+            subject = subj;
+        }
+    }
+
+    /// <summary>
+    /// Прави скрийншот на екрана и го изпраща към API на зададен интервал.
+    /// Активира се само ако ServiceConfiguration.ScreenshotEnabled = true.
+    /// Работи само в интерактивна сесия (не от Session 0 / SYSTEM); при грешка просто пропуска.
+    /// </summary>
+    private async Task MonitorScreenshots(CancellationToken cancellationToken)
+    {
+        if (!_serviceConfig.ScreenshotEnabled)
+        {
+            _logger.LogDebug("Screenshot monitoring е изключен.");
+            return;
+        }
+
+        int intervalMin = Math.Max(1, _serviceConfig.ScreenshotIntervalMinutes);
+        _logger.LogInformation("Screenshot monitoring стартиран – интервал {Min} мин.", intervalMin);
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            await Task.Delay(TimeSpan.FromMinutes(intervalMin), cancellationToken);
+            if (cancellationToken.IsCancellationRequested) break;
+
+            try
+            {
+                int screenW = GetSystemMetrics(0); // SM_CXSCREEN
+                int screenH = GetSystemMetrics(1); // SM_CYSCREEN
+
+                if (screenW <= 0 || screenH <= 0)
+                {
+                    _logger.LogDebug("Screenshot: GetSystemMetrics върна 0 (Session 0 isolation?).");
+                    continue;
+                }
+
+                using var bmp = new System.Drawing.Bitmap(screenW, screenH, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                using (var g = System.Drawing.Graphics.FromImage(bmp))
+                {
+                    g.CopyFromScreen(0, 0, 0, 0, new System.Drawing.Size(screenW, screenH), System.Drawing.CopyPixelOperation.SourceCopy);
+                }
+
+                // Запис в JPEG (quality ~60 за по-малък размер)
+                using var ms = new MemoryStream();
+                var jpegEncoder = System.Drawing.Imaging.ImageCodecInfo
+                    .GetImageEncoders()
+                    .FirstOrDefault(c => c.FormatID == System.Drawing.Imaging.ImageFormat.Jpeg.Guid);
+                if (jpegEncoder != null)
+                {
+                    var encoderParams = new System.Drawing.Imaging.EncoderParameters(1);
+                    encoderParams.Param[0] = new System.Drawing.Imaging.EncoderParameter(
+                        System.Drawing.Imaging.Encoder.Quality, 60L);
+                    bmp.Save(ms, jpegEncoder, encoderParams);
+                }
+                else
+                {
+                    bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Jpeg);
+                }
+
+                string base64 = Convert.ToBase64String(ms.ToArray());
+                _logger.LogDebug("Screenshot: {Kb} KB", ms.Length / 1024);
+
+                await SendOrBufferAsync("/api/activity/screenshot", new
+                {
+                    Username = EffectiveUsername,
+                    Domain = EffectiveDomain,
+                    MachineName = _machineName,
+                    ImageBase64 = base64,
+                    Width = screenW,
+                    Height = screenH,
+                    Timestamp = DateTime.Now
+                }, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Грешка при screenshot (може да е Session 0).");
+            }
+        }
+    }
+
     /// <summary>
     /// Извлича стойност от Event Log съобщение
     /// </summary>
@@ -1515,6 +2079,167 @@ public class Worker : BackgroundService
         }
         return string.Empty;
     }
+
+    // ─── Machine Snapshot (процеси + инсталирани програми за уеб UI) ─────────
+
+    private async Task SendMachineSnapshot(CancellationToken cancellationToken)
+    {
+        // Инсталираните програми се четат веднъж на старт + на всеки час
+        List<object> installedApps = ReadInstalledApps();
+        DateTime lastAppsRead = DateTime.Now;
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                if (_httpClient.BaseAddress == null)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
+                    continue;
+                }
+
+                // Обновяване на инсталирани програми веднъж на час
+                if ((DateTime.Now - lastAppsRead).TotalHours >= 1)
+                {
+                    installedApps = ReadInstalledApps();
+                    lastAppsRead = DateTime.Now;
+                }
+
+                // Процеси
+                var procs = Process.GetProcesses().Select(p =>
+                {
+                    try
+                    {
+                        return new
+                        {
+                            pid = p.Id,
+                            name = p.ProcessName,
+                            mainWindowTitle = p.MainWindowTitle,
+                            memoryMb = p.WorkingSet64 / 1024 / 1024,
+                            username = (string?)null
+                        };
+                    }
+                    catch { return null; }
+                }).Where(p => p != null).ToList();
+
+                var snapshot = new
+                {
+                    machineName = _machineName,
+                    processes = procs,
+                    installedApps
+                };
+
+                await _httpClient.PostAsJsonAsync("/api/machines/snapshot", snapshot, cancellationToken);
+
+                // Проверка за чакащи команди (kill / uninstall)
+                await ExecutePendingCommands(cancellationToken);
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex)
+            {
+                _logger.LogDebug("[Snapshot] {Message}", ex.Message);
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
+        }
+    }
+
+    private List<object> ReadInstalledApps()
+    {
+        var apps = new List<object>();
+        var keys = new[]
+        {
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+            @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+        };
+
+        foreach (var keyPath in keys)
+        {
+            try
+            {
+                using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(keyPath);
+                if (key == null) continue;
+                foreach (var subName in key.GetSubKeyNames())
+                {
+                    try
+                    {
+                        using var sub = key.OpenSubKey(subName);
+                        if (sub == null) continue;
+                        var name = sub.GetValue("DisplayName") as string;
+                        if (string.IsNullOrWhiteSpace(name)) continue;
+                        apps.Add(new
+                        {
+                            name,
+                            version = sub.GetValue("DisplayVersion") as string,
+                            publisher = sub.GetValue("Publisher") as string,
+                            installDate = sub.GetValue("InstallDate") as string
+                        });
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
+        return apps.DistinctBy(a => ((dynamic)a).name).OrderBy(a => ((dynamic)a).name).ToList<object>();
+    }
+
+    private async Task ExecutePendingCommands(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var resp = await _httpClient.GetFromJsonAsync<List<MachineCommandDto>>(
+                $"/api/machines/commands/pending?machineName={Uri.EscapeDataString(_machineName)}", cancellationToken);
+
+            if (resp == null || resp.Count == 0) return;
+
+            foreach (var cmd in resp)
+            {
+                string result = "OK";
+                try
+                {
+                    if (cmd.Type == "kill" && int.TryParse(cmd.Argument, out int pid))
+                    {
+                        var proc = Process.GetProcessById(pid);
+                        proc.Kill();
+                        _loggerService.LogInfo($"[Command] Kill PID {pid}");
+                    }
+                    else if (cmd.Type == "uninstall")
+                    {
+                        // Тихо деинсталиране чрез wmic
+                        var psi = new System.Diagnostics.ProcessStartInfo("wmic",
+                            $"product where name=\"{cmd.Argument.Replace("\"", "")}\" call uninstall /nointeractive")
+                        {
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        };
+                        Process.Start(psi);
+                        _loggerService.LogInfo($"[Command] Uninstall: {cmd.Argument}");
+                    }
+                    else
+                    {
+                        result = "Unknown command";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    result = ex.Message;
+                    _loggerService.LogWarning($"[Command] Грешка: {ex.Message}");
+                }
+
+                await _httpClient.PostAsJsonAsync($"/api/machines/commands/{cmd.CommandId}/done",
+                    new { result }, cancellationToken);
+            }
+        }
+        catch { }
+    }
+}
+
+public class MachineCommandDto
+{
+    public string CommandId { get; set; } = "";
+    public string Type { get; set; } = "";
+    public string Argument { get; set; } = "";
 }
 
 /// <summary>
@@ -1533,4 +2258,6 @@ public class MonitorConfigurationResponse
     public int ConnectionTimeout { get; set; } = 30;
     public int RetryInterval { get; set; } = 60;
     public int MaxRetries { get; set; } = 3;
+    public bool ScreenshotEnabled { get; set; } = false;
+    public int ScreenshotIntervalMinutes { get; set; } = 5;
 }

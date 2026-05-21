@@ -1,0 +1,14 @@
+<div class="alert alert-info mb-0">
+    <h6 class="alert-heading"><i class="bi bi-question-circle me-2"></i>Защо нямам логове?</h6>
+    <p class="small mb-2">Записите в тази страница идват от таблицата <strong>LogEntries</strong>. Тя се пълни когато:</p>
+    <ul class="small mb-2">
+        <li><strong>Monitor</strong> изпраща логове към <code>POST /api/logs/upload</code> – при всяко <code>LogInfo</code>/<code>LogWarning</code>/<code>LogError</code> от LoggerService.</li>
+    </ul>
+    <p class="small mb-1"><strong>Проверете:</strong></p>
+    <ol class="small mb-0 ps-3">
+        <li><strong>ServiceUrl</strong> в Monitor <code>appsettings.json</code> (или в Registry <code>HKLM\SOFTWARE\ADS\WindowsAuth\ServiceUrl</code>) – трябва да сочи към вашия API, напр. <code>https://ads-auth.nursanbulgaria.com</code>.</li>
+        <li>Услугата <strong>ADS.WindowsAuth.Monitor</strong> да работи и да може да достигне API-то (мрежа, firewall).</li>
+        <li>Таблицата <strong>LogEntries</strong> да съществува в базата (ако не използвате миграции, пуснете скрипта от <code>Scripts/CreateTables-FromProgram.sql</code> или оставете API да я създаде при старт).</li>
+        <li>На машината с Monitor в папка <code>LOGS</code> – ако има файл <code>API_ERROR_*.LOG</code> с грешки при изпращане, отворете го за детайли.</li>
+    </ol>
+</div>

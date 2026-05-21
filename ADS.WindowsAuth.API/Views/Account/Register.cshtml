@@ -1,0 +1,71 @@
+@model RegisterViewModel
+@{
+    ViewData["Title"] = "Създаване на потребител";
+    Layout = "_Layout";
+}
+
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="glass-card p-4">
+                <div class="d-flex align-items-center mb-4">
+                    <span style="font-size:2rem; margin-right:1rem;">👤</span>
+                    <div>
+                        <h4 class="mb-0">Нов потребител</h4>
+                        <small class="text-muted">Само за Администратори</small>
+                    </div>
+                    <a href="/Account/Users" class="btn btn-outline-secondary btn-sm ms-auto">
+                        ← Назад
+                    </a>
+                </div>
+
+                @if (TempData["Error"] != null)
+                {
+                    <div class="alert alert-danger">@TempData["Error"]</div>
+                }
+
+                <form asp-action="Register" asp-controller="Account" method="post">
+                    @Html.AntiForgeryToken()
+
+                    <div class="mb-3">
+                        <label asp-for="Username" class="form-label">Потребителско Иmе <span class="text-danger">*</span></label>
+                        <input asp-for="Username" class="form-control" placeholder="ivan.petrov" />
+                        <span asp-validation-for="Username" class="text-danger small"></span>
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="DisplayName" class="form-label">Пълно Иmе</label>
+                        <input asp-for="DisplayName" class="form-control" placeholder="Иван Петров" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="Email" class="form-label">Имейл</label>
+                        <input asp-for="Email" class="form-control" type="email" placeholder="ivan@company.com" />
+                        <span asp-validation-for="Email" class="text-danger small"></span>
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="Password" class="form-label">Парола <span class="text-danger">*</span></label>
+                        <input asp-for="Password" type="password" class="form-control" placeholder="Min 8 символа" />
+                        <span asp-validation-for="Password" class="text-danger small"></span>
+                        <small class="text-muted">Мин. 8 символа, с цифра</small>
+                    </div>
+
+                    <div class="mb-4">
+                        <label asp-for="Role" class="form-label">Роля</label>
+                        <select asp-for="Role" class="form-select" asp-items="@(new SelectList(ViewBag.Roles as IEnumerable<string> ?? new[] { "User", "Monitor", "Admin" }))">
+                        </select>
+                    </div>
+
+                    <div asp-validation-summary="All" class="alert alert-danger mb-3" style="display:@(ViewData.ModelState.IsValid ? "none" : "block")"></div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            ✅ Създай потребител
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>

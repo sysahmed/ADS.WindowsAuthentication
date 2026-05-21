@@ -49,7 +49,9 @@ public class MonitorConfigurationController : ControllerBase
                     OfflineDataRetention = 7,
                     ConnectionTimeout = 30,
                     RetryInterval = 60,
-                    MaxRetries = 3
+                    MaxRetries = 3,
+                    ScreenshotEnabled = false,
+                    ScreenshotIntervalMinutes = 5
                 };
                 return Ok(defaultConfig);
             }
@@ -67,7 +69,9 @@ public class MonitorConfigurationController : ControllerBase
                 OfflineDataRetention = config.OfflineDataRetention,
                 ConnectionTimeout = config.ConnectionTimeout,
                 RetryInterval = config.RetryInterval,
-                MaxRetries = config.MaxRetries
+                MaxRetries = config.MaxRetries,
+                ScreenshotEnabled = config.ScreenshotEnabled,
+                ScreenshotIntervalMinutes = config.ScreenshotIntervalMinutes
             };
 
             return Ok(response);
@@ -109,6 +113,8 @@ public class MonitorConfigurationController : ControllerBase
                 existing.ConnectionTimeout = configuration.ConnectionTimeout;
                 existing.RetryInterval = configuration.RetryInterval;
                 existing.MaxRetries = configuration.MaxRetries;
+                existing.ScreenshotEnabled = configuration.ScreenshotEnabled;
+                existing.ScreenshotIntervalMinutes = configuration.ScreenshotIntervalMinutes;
                 existing.UpdatedAt = DateTime.Now;
 
                 _dbContext.MonitorConfigurations.Update(existing);

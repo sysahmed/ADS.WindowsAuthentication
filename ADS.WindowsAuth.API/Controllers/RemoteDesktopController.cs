@@ -1,37 +1,45 @@
+using Microsoft.AspNetCore.Authorization;
+using ADS.WindowsAuth.Core.Services;
+using ADS.WindowsAuth.Core.Data;
 using Microsoft.AspNetCore.Mvc;
-using System.Net.Http.Json;
-using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 
 namespace ADS.WindowsAuth.API.Controllers;
 
 /// <summary>
-/// MVC контролер за Remote Desktop viewer
+/// MVC контролер за Remote Desktop viewer – изисква вход
 /// </summary>
 public class RemoteDesktopController : Controller
 {
-    private readonly IConfiguration _configuration;
-    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IRemoteDesktopSessionService _rdSessionService;
     private readonly ILogger<RemoteDesktopController> _logger;
+    private readonly ApplicationDbContext _dbContext;
 
     public RemoteDesktopController(
-        IConfiguration configuration,
-        IHttpClientFactory httpClientFactory,
-        ILogger<RemoteDesktopController> logger)
+        IRemoteDesktopSessionService rdSessionService,
+        ILogger<RemoteDesktopController> logger,
+        ApplicationDbContext dbContext)
     {
-        _configuration = configuration;
-        _httpClientFactory = httpClientFactory;
+        _rdSessionService = rdSessionService;
         _logger = logger;
+        _dbContext = dbContext;
     }
 
     /// <summary>
-    /// Главна страница - списък на активни машини
+    /// Главна страница - списък на активни машини и наблюдавани машини
     /// </summary>
-    public IActionResult Index()
+    public async Task<IActionResult> Index()
     {
-        // Взимаме Service URL за API заявки
-        var serviceUrl = _configuration["RemoteDesktop:ServiceUrl"] ?? "http://localhost:5140";
-        ViewData["ServiceUrl"] = serviceUrl;
-        
+        // Machines that sent logs in the last 7 days
+        var cutoff = DateTime.UtcNow.AddDays(-7);
+        var monitoredMachines = await _dbContext.LogEntries
+            .Where(l => l.Timestamp >= cutoff)
+            .Select(l => l.MachineName)
+            .Distinct()
+            .OrderBy(m => m)
+            .ToListAsync();
+
+        ViewBag.MonitoredMachines = monitoredMachines;
         return View();
     }
 
@@ -46,7 +54,6 @@ public class RemoteDesktopController : Controller
     /// <summary>
     /// Viewer страница - показване на remote screen
     /// </summary>
-    /// <param name="sessionId">Session ID за свързване</param>
     public IActionResult Viewer(string sessionId)
     {
         if (string.IsNullOrEmpty(sessionId))
@@ -55,48 +62,29 @@ public class RemoteDesktopController : Controller
         }
 
         ViewData["SessionId"] = sessionId;
-        
-        // Взимаме Service URL от конфигурацията
-        var serviceUrl = _configuration["RemoteDesktop:ServiceUrl"] ?? "http://localhost:5140";
-        var hubPath = _configuration["RemoteDesktop:HubPath"] ?? "/hubs/remotedesktop";
-        ViewData["ServiceUrl"] = serviceUrl + hubPath;
-        
+        // Hub е в същото приложение - използваме относителен URL
+        ViewData["HubUrl"] = "/hubs/remotedesktop";
+
         return View();
     }
 
     /// <summary>
-    /// API endpoint - получава информация за сесия и връща директна връзка към viewer
+    /// API endpoint - получава информация за конкретна сесия
     /// </summary>
-    /// <param name="sessionId">Session ID</param>
     [HttpGet("api/remotedesktop/session/{sessionId}")]
     public async Task<IActionResult> GetSessionInfo(string sessionId)
     {
         try
         {
-            var serviceUrl = _configuration["RemoteDesktop:ServiceUrl"] ?? "http://localhost:5140";
-            var apiBaseUrl = $"{Request.Scheme}://{Request.Host}";
-            
-            using var httpClient = _httpClientFactory.CreateClient();
-            httpClient.Timeout = TimeSpan.FromSeconds(10);
-            
-            // Взимаме информация за сесията от Service API
-            var response = await httpClient.GetAsync($"{serviceUrl}/api/remotedesktop/sessions/{sessionId}");
-            
-            if (!response.IsSuccessStatusCode)
+            var session = await _rdSessionService.GetSessionAsync(sessionId);
+
+            if (session == null)
             {
-                if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-                {
-                    return NotFound(new { error = "Сесията не съществува", sessionId });
-                }
-                
-                return StatusCode((int)response.StatusCode, new { error = "Грешка при комуникация с Remote Desktop Service" });
+                return NotFound(new { error = "Сесията не съществува", sessionId });
             }
-            
-            var session = await response.Content.ReadFromJsonAsync<object>();
-            
-            // Генерираме директна връзка към viewer
-            var viewerUrl = $"{apiBaseUrl}/RemoteDesktop/Viewer?sessionId={sessionId}";
-            
+
+            var viewerUrl = $"{Request.Scheme}://{Request.Host}/RemoteDesktop/Viewer?sessionId={sessionId}";
+
             return Ok(new
             {
                 sessionId,
@@ -105,16 +93,33 @@ public class RemoteDesktopController : Controller
                 message = "Сесия намерена успешно"
             });
         }
-        catch (HttpRequestException ex)
-        {
-            _logger.LogError($"Грешка при комуникация с Remote Desktop Service: {ex.Message}");
-            return StatusCode(503, new { error = "Remote Desktop Service не е достъпен", details = ex.Message });
-        }
         catch (Exception ex)
         {
-            _logger.LogError($"Грешка при получаване на сесия: {ex.Message}", ex);
+            _logger.LogError(ex, "Грешка при получаване на сесия {SessionId}", sessionId);
             return StatusCode(500, new { error = "Вътрешна грешка", details = ex.Message });
         }
+    }
+
+    /// <summary>
+    /// Диагностика – показва всички сесии с host/viewer статус. Отвори в браузър: /api/remotedesktop/sessions/status
+    /// </summary>
+    [AllowAnonymous]
+    [HttpGet("api/remotedesktop/sessions/status")]
+    public async Task<IActionResult> GetSessionsStatus()
+    {
+        var sessions = await _rdSessionService.GetActiveSessionsAsync();
+        var result = sessions.Select(s => new
+        {
+            s.SessionId,
+            s.MachineName,
+            hostConnected = !string.IsNullOrEmpty(s.HostConnectionId),
+            viewerConnected = !string.IsNullOrEmpty(s.ViewerConnectionId),
+            s.AutoApprove,
+            s.ControlEnabled,
+            s.IsExpired,
+            s.LastActivity
+        });
+        return Ok(result);
     }
 
     /// <summary>
@@ -125,58 +130,100 @@ public class RemoteDesktopController : Controller
     {
         try
         {
-            var serviceUrl = _configuration["RemoteDesktop:ServiceUrl"] ?? "http://localhost:5140";
+            var sessions = await _rdSessionService.GetActiveSessionsAsync();
             var apiBaseUrl = $"{Request.Scheme}://{Request.Host}";
-            
-            using var httpClient = _httpClientFactory.CreateClient();
-            httpClient.Timeout = TimeSpan.FromSeconds(10);
-            
-            // Взимаме активните сесии от Service API
-            var response = await httpClient.GetAsync($"{serviceUrl}/api/remotedesktop/sessions");
-            
-            if (!response.IsSuccessStatusCode)
+
+            var result = sessions.Select(s => new
             {
-                return StatusCode((int)response.StatusCode, new { error = "Грешка при комуникация с Remote Desktop Service" });
-            }
-            
-            var jsonString = await response.Content.ReadAsStringAsync();
-            var sessionsJson = JsonDocument.Parse(jsonString);
-            
-            if (sessionsJson.RootElement.ValueKind != JsonValueKind.Array)
-            {
-                return Ok(new List<object>());
-            }
-            
-            // Добавяме viewerUrl за всяка сесия
-            var resultList = new List<object>();
-            
-            foreach (var sessionElement in sessionsJson.RootElement.EnumerateArray())
-            {
-                var sessionObj = JsonSerializer.Deserialize<Dictionary<string, object>>(sessionElement.GetRawText());
-                
-                if (sessionObj != null && sessionObj.TryGetValue("sessionId", out var sessionIdObj))
-                {
-                    var sessionId = sessionIdObj?.ToString();
-                    if (!string.IsNullOrEmpty(sessionId))
-                    {
-                        sessionObj["viewerUrl"] = $"{apiBaseUrl}/RemoteDesktop/Viewer?sessionId={sessionId}";
-                    }
-                }
-                
-                resultList.Add(sessionObj ?? new Dictionary<string, object>());
-            }
-            
-            return Ok(resultList);
-        }
-        catch (HttpRequestException ex)
-        {
-            _logger.LogError($"Грешка при комуникация с Remote Desktop Service: {ex.Message}");
-            return StatusCode(503, new { error = "Remote Desktop Service не е достъпен", details = ex.Message });
+                s.SessionId,
+                s.MachineName,
+                s.RequestedByUser,
+                s.CreatedAt,
+                s.LastActivity,
+                s.IsAuthorized,
+                s.ControlEnabled,
+                isActive = !s.IsExpired,
+                hostConnected   = !string.IsNullOrEmpty(s.HostConnectionId),
+                viewerConnected = !string.IsNullOrEmpty(s.ViewerConnectionId),
+                viewerUrl = $"{apiBaseUrl}/RemoteDesktop/Viewer?sessionId={s.SessionId}"
+            });
+
+            return Ok(result);
         }
         catch (Exception ex)
         {
-            _logger.LogError($"Грешка при получаване на сесии: {ex.Message}", ex);
+            _logger.LogError(ex, "Грешка при получаване на сесии");
             return StatusCode(500, new { error = "Вътрешна грешка", details = ex.Message });
         }
     }
+
+    /// <summary>
+    /// API endpoint - създава или връща сесия за машина (за host приложението).
+    /// AllowAnonymous – Host приложението се свързва без auth credentials.
+    /// </summary>
+    [AllowAnonymous]
+    [HttpPost("api/remotedesktop/sessions/createorget")]
+    public async Task<IActionResult> CreateOrGetSession([FromBody] CreateRdSessionRequest request)
+    {
+        try
+        {
+            var (sessionId, created) = await _rdSessionService.CreateOrGetSessionAsync(request.MachineName, request.RequestedBy);
+            if (created)
+                _logger.LogInformation("Създадена нова Remote Desktop сесия {SessionId} за {Machine}", sessionId, request.MachineName);
+            return Ok(new { sessionId, message = "Сесия готова" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Грешка при CreateOrGet Remote Desktop сесия");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// API endpoint - изтрива сесия по ID
+    /// </summary>
+    [HttpDelete("api/remotedesktop/sessions/{sessionId}")]
+    public async Task<IActionResult> DeleteSession(string sessionId)
+    {
+        try
+        {
+            var session = await _rdSessionService.GetSessionAsync(sessionId);
+            if (session == null)
+                return NotFound(new { error = "Сесията не съществува" });
+
+            await _rdSessionService.EndSessionAsync(sessionId);
+            _logger.LogInformation("Изтрита Remote Desktop сесия {SessionId} от уеб", sessionId);
+            return Ok(new { message = "Сесията е изтрита" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Грешка при изтриване на сесия {SessionId}", sessionId);
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// API endpoint - създава нова remote desktop сесия
+    /// </summary>
+    [HttpPost("api/remotedesktop/sessions")]
+    public async Task<IActionResult> CreateSession([FromBody] CreateRdSessionRequest request)
+    {
+        try
+        {
+            var sessionId = await _rdSessionService.CreateSessionAsync(request.MachineName, request.RequestedBy);
+            _logger.LogInformation("Създадена Remote Desktop сесия {SessionId} за {Machine}", sessionId, request.MachineName);
+            return Ok(new { sessionId, message = "Сесия създадена успешно" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Грешка при създаване на Remote Desktop сесия");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+}
+
+public class CreateRdSessionRequest
+{
+    public string MachineName { get; set; } = string.Empty;
+    public string? RequestedBy { get; set; }
 }

@@ -56,6 +56,26 @@ public class Policy
     public List<string> BlockedInstallations { get; set; } = new();
 
     /// <summary>
+    /// Whitelist на приложения – само тези са разрешени (AppWhitelistMode трябва да е true)
+    /// </summary>
+    public List<string> AllowedApplications { get; set; } = new();
+
+    /// <summary>
+    /// Whitelist режим за приложения: ако е true, блокира всичко ОСВЕН AllowedApplications
+    /// </summary>
+    public bool AppWhitelistMode { get; set; } = false;
+
+    /// <summary>
+    /// Whitelist на сайтове – само тези са разрешени (WebWhitelistMode трябва да е true)
+    /// </summary>
+    public List<string> AllowedWebsites { get; set; } = new();
+
+    /// <summary>
+    /// Whitelist режим за сайтове: ако е true, блокира всичко ОСВЕН AllowedWebsites
+    /// </summary>
+    public bool WebWhitelistMode { get; set; } = false;
+
+    /// <summary>
     /// Дали да се блокира достъпът до USB устройства
     /// </summary>
     public bool BlockUsbAccess { get; set; }

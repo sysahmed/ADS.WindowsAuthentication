@@ -1,0 +1,77 @@
+@{
+    ViewData["Title"] = "Свързване към Remote Desktop";
+}
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">Remote Desktop - Свързване</h4>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">Въведете Session ID за да се свържете към remote машина</p>
+                    
+                    <form id="connectForm">
+                        <div class="mb-3">
+                            <label for="sessionId" class="form-label">Session ID</label>
+                            <input type="text" 
+                                   class="form-control form-control-lg text-center" 
+                                   id="sessionId" 
+                                   placeholder="A3K9M2"
+                                   maxlength="6"
+                                   style="letter-spacing: 0.3em; font-family: monospace;"
+                                   required>
+                            <div class="form-text">6-символен код от host машината</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="userId" class="form-label">Вашето име (опционално)</label>
+                            <input type="text" 
+                                   class="form-control" 
+                                   id="userId" 
+                                   placeholder="admin@company.com">
+                        </div>
+
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="bi bi-box-arrow-in-right"></i> Свързване
+                            </button>
+                        </div>
+                    </form>
+
+                    <hr class="my-4">
+
+                    <div class="text-center">
+                        <a href="@Url.Action("Index")" class="btn btn-link">
+                            <i class="bi bi-arrow-left"></i> Назад към списъка
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    document.getElementById('connectForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const sessionId = document.getElementById('sessionId').value.trim().toUpperCase();
+        
+        if (sessionId.length !== 6) {
+            alert('Session ID трябва да бъде точно 6 символа');
+            return;
+        }
+
+        // Redirect към viewer
+        window.location.href = `/RemoteDesktop/Viewer?sessionId=${sessionId}`;
+    });
+
+    // Auto uppercase input
+    document.getElementById('sessionId').addEventListener('input', function(e) {
+        e.target.value = e.target.value.toUpperCase();
+    });
+</script>
+}

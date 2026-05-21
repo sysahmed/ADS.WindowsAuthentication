@@ -1,13 +1,10 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
-
-  <ItemGroup>
-    <Content Include="favicon.ico" />
-  </ItemGroup>
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\ADS.WindowsAuth.Core\ADS.WindowsAuth.Core.csproj" />
     <ProjectReference Include="..\ADS.WindowsAuth.CredentialProvider\ADS.WindowsAuth.CredentialProvider.vcxproj" />
     <ProjectReference Include="..\ADS.WindowsAuth.Monitor\ADS.WindowsAuth.Monitor.csproj" />
+    <ProjectReference Include="..\ADS.WindowsAuth.RemoteDesktopHost\ADS.WindowsAuth.RemoteDesktopHost.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,10 +20,7 @@
     <Content Include="appsettings.Development.json" Condition="'$(Configuration)' == 'Debug'">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <None Include="C:\Users\ahmed.NURSAN\Pictures\Screenshot 2025-10-02 113836.png">
-      <Pack>True</Pack>
-      <PackagePath>\</PackagePath>
-    </None>
+    <Content Include="favicon.ico" />
   </ItemGroup>
 
   <!-- Автоматично копиране на CredentialProvider DLL в output директорията -->
@@ -40,18 +34,12 @@
       <CredentialProviderDll Include="$(CredentialProviderDllPath)" Condition="Exists('$(CredentialProviderDllPath)')" />
     </ItemGroup>
     
-    <Copy SourceFiles="@(CredentialProviderDll)" 
-          DestinationFolder="$(OutputPath)" 
-          SkipUnchangedFiles="true"
-          Condition="'@(CredentialProviderDll)' != ''">
+    <Copy SourceFiles="@(CredentialProviderDll)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" Condition="'@(CredentialProviderDll)' != ''">
       <Output TaskParameter="CopiedFiles" ItemName="CopiedCredentialProviderDll" />
     </Copy>
     
-    <Message Text="CredentialProvider DLL копиран: @(CopiedCredentialProviderDll)" 
-             Condition="'@(CopiedCredentialProviderDll)' != ''" 
-             Importance="high" />
-    <Warning Text="CredentialProvider DLL не е намерен на: $(CredentialProviderDllPath). Моля, компилирай CredentialProvider проекта първо." 
-             Condition="'@(CredentialProviderDll)' == ''" />
+    <Message Text="CredentialProvider DLL копиран: @(CopiedCredentialProviderDll)" Condition="'@(CopiedCredentialProviderDll)' != ''" Importance="high" />
+    <Warning Text="CredentialProvider DLL не е намерен на: $(CredentialProviderDllPath). Моля, компилирай CredentialProvider проекта първо." Condition="'@(CredentialProviderDll)' == ''" />
   </Target>
 
   <!-- Автоматично копиране на Monitor EXE и неговите файлове в output директорията -->
@@ -67,34 +55,23 @@
       <MonitorExe Include="$(MonitorOutputPath)\ADS.WindowsAuth.Monitor.exe" Condition="Exists('$(MonitorOutputPath)\ADS.WindowsAuth.Monitor.exe')" />
     </ItemGroup>
     
-    <Copy SourceFiles="@(MonitorExe)" 
-          DestinationFolder="$(OutputPath)" 
-          SkipUnchangedFiles="true"
-          Condition="'@(MonitorExe)' != ''">
+    <Copy SourceFiles="@(MonitorExe)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" Condition="'@(MonitorExe)' != ''">
       <Output TaskParameter="CopiedFiles" ItemName="CopiedMonitorExe" />
     </Copy>
     
-    <Message Text="Monitor EXE копиран: @(CopiedMonitorExe)" 
-             Condition="'@(CopiedMonitorExe)' != ''" 
-             Importance="high" />
-    <Warning Text="Monitor EXE не е намерен на: $(MonitorOutputPath)\ADS.WindowsAuth.Monitor.exe. Моля, компилирай Monitor проекта първо." 
-             Condition="'@(MonitorExe)' == ''" />
+    <Message Text="Monitor EXE копиран: @(CopiedMonitorExe)" Condition="'@(CopiedMonitorExe)' != ''" Importance="high" />
+    <Warning Text="Monitor EXE не е намерен на: $(MonitorOutputPath)\ADS.WindowsAuth.Monitor.exe. Моля, компилирай Monitor проекта първо." Condition="'@(MonitorExe)' == ''" />
     
     <!-- Копиране на всички DLL файлове от Monitor проекта -->
     <ItemGroup>
       <MonitorDlls Include="$(MonitorOutputPath)\*.dll" Condition="Exists('$(MonitorOutputPath)')" />
     </ItemGroup>
     
-    <Copy SourceFiles="@(MonitorDlls)" 
-          DestinationFolder="$(OutputPath)" 
-          SkipUnchangedFiles="true"
-          Condition="'@(MonitorDlls)' != ''">
+    <Copy SourceFiles="@(MonitorDlls)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" Condition="'@(MonitorDlls)' != ''">
       <Output TaskParameter="CopiedFiles" ItemName="CopiedMonitorDlls" />
     </Copy>
     
-    <Message Text="Monitor DLL файлове копирани: @(CopiedMonitorDlls)" 
-             Condition="'@(CopiedMonitorDlls)' != ''" 
-             Importance="high" />
+    <Message Text="Monitor DLL файлове копирани: @(CopiedMonitorDlls)" Condition="'@(CopiedMonitorDlls)' != ''" Importance="high" />
     
     <!-- Копиране на appsettings.json от Monitor проекта -->
     <!-- НЕ копираме при publish за да избегнем конфликт -->
@@ -103,15 +80,28 @@
       <MonitorConfigDev Include="$(SolutionDir)ADS.WindowsAuth.Monitor\appsettings.Development.json" Condition="Exists('$(SolutionDir)ADS.WindowsAuth.Monitor\appsettings.Development.json') AND '$(Configuration)' == 'Debug' AND '$(IsPublishing)' != 'true'" />
     </ItemGroup>
     
-    <Copy SourceFiles="@(MonitorConfig)" 
-          DestinationFolder="$(OutputPath)Monitor" 
-          SkipUnchangedFiles="true"
-          Condition="'@(MonitorConfig)' != '' AND '$(IsPublishing)' != 'true'" />
+    <Copy SourceFiles="@(MonitorConfig)" DestinationFolder="$(OutputPath)Monitor" SkipUnchangedFiles="true" Condition="'@(MonitorConfig)' != '' AND '$(IsPublishing)' != 'true'" />
     
-    <Copy SourceFiles="@(MonitorConfigDev)" 
-          DestinationFolder="$(OutputPath)Monitor" 
-          SkipUnchangedFiles="true"
-          Condition="'@(MonitorConfigDev)' != '' AND '$(IsPublishing)' != 'true'" />
+    <Copy SourceFiles="@(MonitorConfigDev)" DestinationFolder="$(OutputPath)Monitor" SkipUnchangedFiles="true" Condition="'@(MonitorConfigDev)' != '' AND '$(IsPublishing)' != 'true'" />
+  </Target>
+
+  <!-- Копиране на RemoteDesktopHost в подпапка RemoteDesktopHost/ до Monitor -->
+  <Target Name="CopyRemoteDesktopHost" AfterTargets="CopyMonitorFiles" Condition="'$(PublishProfile)' == '' AND '$(IsPublishing)' != 'true'">
+    <PropertyGroup>
+      <RdHostOutputPath Condition="'$(Configuration)' == 'Release'">$(SolutionDir)ADS.WindowsAuth.RemoteDesktopHost\bin\Release\net8.0-windows8.0</RdHostOutputPath>
+      <RdHostOutputPath Condition="'$(Configuration)' == 'Debug'">$(SolutionDir)ADS.WindowsAuth.RemoteDesktopHost\bin\Debug\net8.0-windows8.0</RdHostOutputPath>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <RdHostFiles Include="$(RdHostOutputPath)\**\*.*" Condition="Exists('$(RdHostOutputPath)')" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(RdHostFiles)" DestinationFiles="@(RdHostFiles->'$(OutputPath)RemoteDesktopHost\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" Condition="'@(RdHostFiles)' != ''">
+      <Output TaskParameter="CopiedFiles" ItemName="CopiedRdHost" />
+    </Copy>
+
+    <Message Text="RemoteDesktopHost копиран в RemoteDesktopHost/ подпапка" Condition="'@(CopiedRdHost)' != ''" Importance="high" />
+    <Warning Text="RemoteDesktopHost не е намерен на: $(RdHostOutputPath). Remote Desktop няма да работи." Condition="'@(RdHostFiles)' == ''" />
   </Target>
 
   <ItemGroup>
@@ -127,6 +117,17 @@
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>Resources.Designer.cs</LastGenOutput>
     </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Resources\icon-192.png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+    <None Update="Resources\Screenshot 2025-10-02 113836.png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
   </ItemGroup>
 
   <PropertyGroup>

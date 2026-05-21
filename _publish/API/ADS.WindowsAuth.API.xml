@@ -1,0 +1,935 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>ADS.WindowsAuth.API</name>
+    </assembly>
+    <members>
+        <member name="T:ADS.WindowsAuth.API.Controllers.AccountController">
+            <summary>
+            Portal Account — Login / Logout / Register / Profile
+            Използва ASP.NET Core Identity (PortalUser / AspNetUsers)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AccountController.Login(System.String)">
+            <summary>
+            Login страница – директно на / и /Account/Login
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AccountController.Roles">
+            <summary>Управление на роли – списък, добавяне, изтриване</summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AccountController.ChangePassword(ADS.WindowsAuth.API.Controllers.ChangePasswordViewModel)">
+            <summary>Смяна на собствена парола</summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AccountController.UpdateProfile(ADS.WindowsAuth.API.Controllers.UpdateProfileViewModel)">
+            <summary>Обновяване на профил – имейл, пълно име</summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Controllers.ActivityController">
+            <summary>
+            Контролер за мониторинг на активност. Monitor услугата вика endpoints без логин – AllowAnonymous.
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.ActivityController.StartMonitoring(ADS.WindowsAuth.API.Controllers.StartMonitoringRequest)">
+            <summary>
+            Стартиране на мониторинг
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.ActivityController.StopMonitoring(ADS.WindowsAuth.API.Controllers.StopMonitoringRequest)">
+            <summary>
+            Спиране на мониторинг
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.ActivityController.RegisterApplicationStart(ADS.WindowsAuth.API.Controllers.ApplicationStartRequest)">
+            <summary>
+            Регистрация на стартиране на приложение
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.ActivityController.RegisterApplicationStop(ADS.WindowsAuth.API.Controllers.ApplicationStopRequest)">
+            <summary>
+            Регистрация на спиране на приложение
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.ActivityController.UpdateScreenTime(ADS.WindowsAuth.API.Controllers.ScreenTimeUpdateRequest)">
+            <summary>
+            Обновяване на screen time
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.ActivityController.RegisterWebsiteVisit(ADS.WindowsAuth.API.Controllers.WebsiteVisitRequest)">
+            <summary>
+            Регистрация на посещение на уебсайт (Monitor или browser extension).
+            Използва се за отчети на продуктивност – какви сайтове е отварял потребителят.
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.ActivityController.RegisterNetworkActivity(ADS.WindowsAuth.API.Controllers.NetworkActivityRequest)">
+            <summary>
+            Регистрация на мрежова активност
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.ActivityController.RegisterSystemInfo(ADS.WindowsAuth.API.Controllers.SystemInfoRequest)">
+            <summary>
+            Регистрация на системна информация
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.ActivityController.RegisterUsbDevices(ADS.WindowsAuth.API.Controllers.UsbDevicesRequest)">
+            <summary>
+            Регистрация на USB устройства
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.ActivityController.RegisterFileActivity(ADS.WindowsAuth.API.Controllers.FileActivityRequest)">
+            <summary>
+            Регистрация на файлова активност
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.ActivityController.GetUserActivity(System.String,System.String)">
+            <summary>
+            Получаване на активност на потребител
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.ActivityController.RemoveMachine(System.String)">
+            <summary>
+            Премахване на всички данни за конкретна машина
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.ActivityController.GetAllActivities(System.Nullable{System.DateTime},System.Nullable{System.DateTime})">
+            <summary>
+            Получаване на всички активности
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.ActivityController.RegisterUserLogin(ADS.WindowsAuth.API.Controllers.UserLoginRequest)">
+            <summary>
+            Регистрация на user login
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.ActivityController.RegisterFileOpen(ADS.WindowsAuth.API.Controllers.FileOpenRequest)">
+            <summary>
+            Регистрация на отваряне на файл от конкретно приложение (напр. Excel отвори Invoice.xlsx).
+            Изпраща се от Monitor когато засече Office/друго приложение с файлов аргумент.
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.ActivityController.SaveScreenshot(ADS.WindowsAuth.API.Controllers.ScreenshotRequest)">
+            <summary>
+            Приема скрийншот от Monitor и го записва на диска на сървъра.
+            Файловете се съхраняват в wwwroot/screenshots/{MachineName}/{YYYY-MM-DD}/HH-mm-ss_username.jpg
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.ActivityController.RegisterApplicationActiveTime(ADS.WindowsAuth.API.Controllers.ApplicationActiveTimeRequest)">
+            <summary>
+            Регистрация на активно използване на приложение (колко секунди прозорецът е бил на фокус).
+            Изпраща се от Monitor на всеки ~5 минути за всяко приложение.
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.ActivityController.RegisterEmailActivity(ADS.WindowsAuth.API.Controllers.EmailActivityRequest)">
+            <summary>
+            Регистрация на имейл събитие (получен/изпратен/отговорен от Outlook).
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Controllers.AsyncAuthController">
+            <summary>
+            Async authentication controller
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AsyncAuthController.CreateSessionAsync(ADS.WindowsAuth.Core.Models.CreateSessionRequest)">
+            <summary>
+            Creates a new session asynchronously
+            </summary>
+            <param name="request">Optional request with user and domain</param>
+            <returns>Created session</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AsyncAuthController.GetSessionByTokenAsync(System.String)">
+            <summary>
+            Gets session by access token asynchronously
+            </summary>
+            <param name="accessToken">Access token</param>
+            <returns>Session information</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AsyncAuthController.ApproveSessionAsync(System.String)">
+            <summary>
+            Approves session asynchronously
+            </summary>
+            <param name="sessionId">Session ID</param>
+            <returns>Approval result</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AsyncAuthController.RejectSessionAsync(System.String)">
+            <summary>
+            Rejects session asynchronously
+            </summary>
+            <param name="sessionId">Session ID</param>
+            <returns>Rejection result</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AsyncAuthController.GetAllSessionsAsync">
+            <summary>
+            Gets all active sessions asynchronously (for debugging)
+            </summary>
+            <returns>List of active sessions</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AsyncAuthController.CleanupExpiredSessionsAsync">
+            <summary>
+            Cleans up expired sessions asynchronously
+            </summary>
+            <returns>Cleanup result</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AsyncAuthController.ValidateCredentialsAsync(ADS.WindowsAuth.API.Models.ValidateCredentialsRequest)">
+            <summary>
+            Validates credentials asynchronously
+            </summary>
+            <param name="request">Validation request</param>
+            <returns>Validation result</returns>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Controllers.AuthController">
+            <summary>
+            Контролер за аутентикация
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AuthController.IsInternalIp(System.String)">
+            <summary>Проверява дали IP е от вътрешна мрежа (RFC-1918 + loopback)</summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AuthController.#ctor(ADS.WindowsAuth.Core.Services.ISessionService,ADS.WindowsAuth.Core.Services.IWindowsAuthService,ADS.WindowsAuth.Core.Services.IDatabaseService,ADS.WindowsAuth.Core.Services.ILoggerService,Microsoft.Extensions.DependencyInjection.IServiceScopeFactory,Microsoft.Extensions.Configuration.IConfiguration,ADS.WindowsAuth.API.Services.BruteForceProtectionService)">
+            <summary>
+            Конструктор на AuthController
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AuthController.CreateSession(ADS.WindowsAuth.Core.Models.CreateSessionRequest)">
+            <summary>
+            Създава нова сесия за аутентикация
+            </summary>
+            <param name="request">Опционална заявка с потребител и домейн (ако не е предоставена, използва се текущия потребител)</param>
+            <returns>Създадената сесия</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AuthController.GetSessionStatus(System.String)">
+            <summary>
+            Получава статус на сесия (SessionId или AccessToken). Връща винаги HTTP 200 с JSON status,
+            за да работи Credential Provider (при 404/500 получава празен отговор и остава в Pending).
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AuthController.Authenticate(ADS.WindowsAuth.Core.Models.AuthRequest)">
+            <summary>
+            Аутентикира потребител с домейн credentials
+            </summary>
+            <param name="request">Заявка за аутентикация</param>
+            <returns>Резултат от аутентикацията</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AuthController.GetSessionByToken(System.String)">
+            <summary>
+            Получава информация за сесия по токен
+            </summary>
+            <param name="token">Токен за достъп</param>
+            <returns>Информация за сесията</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AuthController.GetAllSessions">
+            <summary>
+            Получава всички активни сесии (само за Admin)
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Controllers.AuthJwtController">
+            <summary>
+            Authentication controller with JWT support
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AuthJwtController.Login(ADS.WindowsAuth.API.Models.ValidateCredentialsRequest)">
+            <summary>
+            Creates a new session and returns JWT token
+            </summary>
+            <param name="request">Optional request with user and domain</param>
+            <returns>JWT token and session information</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AuthJwtController.ValidateToken(System.String)">
+            <summary>
+            Validates JWT token
+            </summary>
+            <param name="token">JWT token to validate</param>
+            <returns>Validation result</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AuthJwtController.GetCurrentUser">
+            <summary>
+            Gets current user information from JWT token
+            </summary>
+            <returns>User information</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AuthJwtController.RefreshToken">
+            <summary>
+            Refreshes JWT token
+            </summary>
+            <returns>New JWT token</returns>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.AuthJwtController.Logout">
+            <summary>
+            Logs out user (invalidates session)
+            </summary>
+            <returns>Logout result</returns>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Controllers.DownloadController">
+            <summary>
+            Контролер за изтегляне на Client и Installer
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.DownloadController.Installer">
+            <summary>
+            Изтегляне на Install-ADS.ps1 PowerShell скрипт
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.DownloadController.Client">
+            <summary>
+            Изтегляне на ADS.WindowsAuth.Client.exe
+            Търси в типични build локации
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Controllers.HomeController">
+            <summary>
+            MVC контролер за главна страница и QR код аутентикация
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.HomeController.Index">
+            <summary>
+            Главна страница – изисква вход (достъпна на /Home или /Home/Index)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.HomeController.Machine(System.String)">
+            <summary>
+            Страница за реално-времеви мониторинг на машина (процеси, инсталирани програми)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.HomeController.Logs(System.String,System.Int32,System.Int32)">
+            <summary>
+            Страница за преглед на активност и логове по машина.
+            Машините идват от активност (in-memory) и от LogEntries в БД, за да има винаги какво да се избере.
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.HomeController.Auth(System.String)">
+            <summary>
+            Страница за аутентикация с QR код токен (публична — Windows машини)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.HomeController.AuthPost(System.String,System.String,System.String,System.String)">
+            <summary>
+            Обработка на POST заявка за аутентикация (публична — Windows машини)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.HomeController.Success(System.String)">
+            <summary>
+            Страница за успешна аутентикация (публична — Windows машини)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.HomeController.Error(System.Nullable{System.Int32})">
+            <summary>
+            Страница за грешки
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.HomeController.Policies">
+            <summary>
+            Страница за управление на политики
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.HomeController.SystemLogs(System.String,System.String,System.String,System.Int32)">
+            <summary>
+            Страница за преглед на логове от базата данни
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.HomeController.LoginEvents(System.String,System.String,System.Int32,System.Int32)">
+            <summary>
+            Windows влизания (Login events) – от Security Event Log, записани в LoginEvents.
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.HomeController.InputLogs(System.String,System.String,System.String,System.String,System.String,System.Int32,System.Int32)">
+            <summary>
+            Логове въвеждане и кликове (клавиатура + мишка) от Monitor.
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.HomeController.Performance(System.String,System.String,System.String)">
+            <summary>
+            Страница за анализ на продуктивност – изисква вход
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.HomeController.PerformanceAppActivity(System.String,System.String,System.String,System.String,System.Int32,System.Int32)">
+            <summary>
+            Дейности (клавиши/кликове) за конкретно приложение – от Performance страницата (Chrome, SAP и др.).
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.HomeController.PerformanceExport(System.String,System.String,System.String)">
+            <summary>
+            Excel/CSV експорт за анализ на продуктивност
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.HomeController.Monitor">
+            <summary>
+            Страница за преглед на всички машини (Monitor) – изисква вход
+            Използва in-memory + БД (UserActivities, LogEntries) за да показва вързаните машини дори след рестарт
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.HomeController.MonitorSettings(System.String)">
+            <summary>
+            Страница за управление на настройки на Monitor Service
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Controllers.MonitorConfigurationResponse">
+            <summary>
+            Response модел за Monitor Configuration
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Controllers.LevelStat">
+            <summary>
+            Модел за статистика по нива
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Controllers.MachineMonitorInfo">
+            <summary>
+            Модел за информация за машина в Monitor изгледа
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Controllers.LogsController">
+            <summary>
+            Контролер за преглед на логове и активност
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.LogsController.DbCheck">
+            <summary>
+            Диагностика защо няма логове в базата: connection string, брой записи, тест на запис.
+            Винаги връща 200 + JSON (никога 500).
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.LogsController.GetServerLogFile(System.Int32)">
+            <summary>
+            Чете последните редове от лог файла на API сървъра (Serilog). За преглед в уеб портала при хостиране.
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.LogsController.GetMachineActivity(System.String)">
+            <summary>
+            Получава активността за конкретна машина
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.LogsController.GetUserActivity(System.String,System.String)">
+            <summary>
+            Получава активността за конкретен потребител
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.LogsController.GetMachines">
+            <summary>
+            Получава всички машини с активност
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.LogsController.GetMachineStats(System.String)">
+            <summary>
+            Получава статистика за машина
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.LogsController.AddTestLog">
+            <summary>
+            Вмъква един тестов запис в LogEntries – за проверка дали таблицата и порталът работят.
+            Отвори в браузър: /api/logs/test-add
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.LogsController.UploadLog(ADS.WindowsAuth.API.Controllers.LogUploadRequest)">
+            <summary>
+            Получава лог запис от клиент и го записва в базата данни. Monitor вика без логин – AllowAnonymous.
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.LogsController.GetInputLogsStats">
+            <summary>
+            Диагностика: брой записи в InputLogs и последен запис (за проверка дали API вижда данните).
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.LogsController.AddTestInputLog">
+            <summary>
+            Вмъква един тестов запис в InputLogs – за проверка дали таблицата и страницата работят.
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.LogsController.UploadInputLogs(ADS.WindowsAuth.API.Controllers.InputLogUploadRequest)">
+            <summary>
+            Получава batch от записи за въвеждане (клавиши/кликове) от Client или Monitor.
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.LogsController.GetMachineLogs(System.String,System.Nullable{System.Int32})">
+            <summary>
+            Получава логове за конкретна машина (от базата данни)
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Controllers.LogUploadRequest">
+            <summary>
+            Заявка за качване на лог
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Controllers.MachineController">
+            <summary>
+            API за реално-времеви данни от Machine Monitor (процеси, инсталирани програми, команди).
+            Monitor-ът вика без логин (AllowAnonymous).
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.MachineController.PostSnapshot(ADS.WindowsAuth.API.Services.MachineSnapshot)">
+            <summary>
+            Monitor → API: изпраща текущ snapshot (процеси + инсталирани)
+            POST /api/machines/snapshot
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.MachineController.GetSnapshot(System.String)">
+            <summary>
+            Web → API: взима snapshot за дадена машина
+            GET /api/machines/{machineName}/snapshot
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.MachineController.SendCommand(System.String,ADS.WindowsAuth.API.Controllers.CommandRequest)">
+            <summary>
+            Web → API: изпраща команда към машина (kill process / uninstall)
+            POST /api/machines/{machineName}/command
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.MachineController.GetPendingCommands(System.String)">
+            <summary>
+            Monitor → API: взима чакащи команди за изпълнение
+            GET /api/machines/commands/pending?machineName=...
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.MachineController.MarkCommandDone(System.String,ADS.WindowsAuth.API.Controllers.CommandResultRequest)">
+            <summary>
+            Monitor → API: отчита резултат от изпълнена команда
+            POST /api/machines/commands/{commandId}/done
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Controllers.MonitorConfigurationController">
+            <summary>
+            Контролер за управление на конфигурацията на Monitor Service
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.MonitorConfigurationController.GetConfiguration(System.String)">
+            <summary>
+            Получава конфигурацията за конкретна машина
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.MonitorConfigurationController.SetConfiguration(ADS.WindowsAuth.Core.Data.Entities.MonitorConfigurationEntity)">
+            <summary>
+            Създава или обновява конфигурация за машина
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.MonitorConfigurationController.GetAllConfigurations">
+            <summary>
+            Получава всички конфигурации
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Controllers.PolicyController">
+            <summary>
+            Контролер за управление на политики
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.PolicyController.GetAllPolicies">
+            <summary>
+            Получава всички политики
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.PolicyController.GetPolicy(System.Int32)">
+            <summary>
+            Получава политика по ID
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.PolicyController.CreatePolicy(ADS.WindowsAuth.Core.Models.Policy)">
+            <summary>
+            Създава нова политика
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.PolicyController.UpdatePolicy(System.Int32,ADS.WindowsAuth.Core.Models.Policy)">
+            <summary>
+            Обновява политика
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.PolicyController.DeletePolicy(System.Int32)">
+            <summary>
+            Изтрива политика
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.PolicyController.GetPoliciesForMachine(System.String,System.String)">
+            <summary>
+            Получава активни политики за конкретна машина и потребител.
+            AllowAnonymous – Monitor услугата вика този endpoint без логин; без него политиките не се прилагат на клиентите.
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.PolicyController.CheckWebsite(ADS.WindowsAuth.API.Controllers.WebsiteCheckRequest)">
+            <summary>
+            Проверява дали уебсайт е блокиран
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.PolicyController.CheckApplication(ADS.WindowsAuth.API.Controllers.ApplicationCheckRequest)">
+            <summary>
+            Проверява дали приложение е блокирано
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.PolicyController.CheckFileExtension(ADS.WindowsAuth.API.Controllers.FileExtensionCheckRequest)">
+            <summary>
+            Проверява дали файлово разширение е блокирано
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Controllers.RemoteDesktopController">
+            <summary>
+            MVC контролер за Remote Desktop viewer – изисква вход
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.RemoteDesktopController.Index">
+            <summary>
+            Главна страница - списък на активни машини и наблюдавани машини
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.RemoteDesktopController.Connect">
+            <summary>
+            Viewer страница - въвеждане на Session ID
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.RemoteDesktopController.Viewer(System.String)">
+            <summary>
+            Viewer страница - показване на remote screen
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.RemoteDesktopController.GetSessionInfo(System.String)">
+            <summary>
+            API endpoint - получава информация за конкретна сесия
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.RemoteDesktopController.GetSessionsStatus">
+            <summary>
+            Диагностика – показва всички сесии с host/viewer статус. Отвори в браузър: /api/remotedesktop/sessions/status
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.RemoteDesktopController.GetActiveSessions">
+            <summary>
+            API endpoint - получава всички активни сесии
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.RemoteDesktopController.CreateOrGetSession(ADS.WindowsAuth.API.Controllers.CreateRdSessionRequest)">
+            <summary>
+            API endpoint - създава или връща сесия за машина (за host приложението).
+            AllowAnonymous – Host приложението се свързва без auth credentials.
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.RemoteDesktopController.DeleteSession(System.String)">
+            <summary>
+            API endpoint - изтрива сесия по ID
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.RemoteDesktopController.CreateSession(ADS.WindowsAuth.API.Controllers.CreateRdSessionRequest)">
+            <summary>
+            API endpoint - създава нова remote desktop сесия
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Controllers.SecurityController">
+            <summary>
+            Администраторски контролер за управление на блокирани IP адреси.
+            Достъпен само за потребители с роля Admin.
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.SecurityController.BlockedIps">
+            <summary>Страница за управление на блокирани IP адреси.</summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.SecurityController.UnblockIp(System.String,System.String)">
+            <summary>Деблокиране на IP адрес (POST).</summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.SecurityController.GetBlockedIps">
+            <summary>Списък с блокирани IP адреси (JSON).</summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.SecurityController.UnblockIpApi(System.String,ADS.WindowsAuth.API.Controllers.UnblockRequest)">
+            <summary>Деблокиране на IP (JSON API).</summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Controllers.WebAuthnController">
+            <summary>
+            MVC контролер за WebAuthn/FIDO2 биометрична аутентикация
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.WebAuthnController.Register">
+            <summary>Страница за регистрация на биометрично устройство</summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.WebAuthnController.Login">
+            <summary>Страница за вход с биометрия</summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.WebAuthnController.Manage">
+            <summary>Управление на регистрирани устройства</summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.WebAuthnController.BeginRegistration(ADS.WindowsAuth.API.Controllers.BeginRegistrationRequest)">
+            <summary>
+            Стъпка 1: Генерира опции за регистрация
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.WebAuthnController.CompleteRegistration(ADS.WindowsAuth.API.Controllers.CompleteRegistrationRequest)">
+            <summary>
+            Стъпка 2: Завършва регистрацията и запазва credential
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.WebAuthnController.BeginAuthentication(ADS.WindowsAuth.API.Controllers.BeginAuthRequest)">
+            <summary>
+            Стъпка 1: Генерира challenge за аутентикация
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.WebAuthnController.CompleteAuthentication(ADS.WindowsAuth.API.Controllers.CompleteAuthRequest)">
+            <summary>
+            Стъпка 2: Верифицира assertion и издава JWT
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.WebAuthnController.GetAdUsers">
+            <summary>
+            Списък на потребителите от AD домейна
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.WebAuthnController.GetAdUser(System.String)">
+            <summary>
+            Информация за конкретен потребител от AD
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Controllers.WebAuthnController.DeleteCredential(System.String,System.String)">
+            <summary>
+            Изтрива FIDO2 credential
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Data.PortalDbContext">
+            <summary>
+            DbContext за Portal Identity (ASP.NET Core Identity — AspNetUsers, AspNetRoles, etc.)
+            Отделен от ApplicationDbContext за да не се налага да се промени Core проекта.
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.API.Data.PortalDbContext.Fido2Keys">
+            <summary>FIDO2/WebAuthn credentials — обвързани с PortalUser</summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Data.StoredFido2Key">
+            <summary>
+            Съхранен FIDO2 ключ в базата данни
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.API.Data.StoredFido2Key.UserId">
+            <summary>FK към AspNetUsers.Id</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.API.Data.StoredFido2Key.CredentialId">
+            <summary>Base64url credential ID от authenticator-а</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.API.Data.StoredFido2Key.PublicKeyCose">
+            <summary>COSE public key (Base64)</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.API.Data.StoredFido2Key.SignCount">
+            <summary>Sign counter (replay protection)</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.API.Data.StoredFido2Key.DeviceDescription">
+            <summary>Описание на устройство (напр. "Windows Hello")</summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Data.PortalUser">
+            <summary>
+            Portal потребител — разширява ASP.NET Core Identity IdentityUser
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.API.Data.PortalUser.DisplayName">
+            <summary>Пълно Имя</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.API.Data.PortalUser.WindowsUsername">
+            <summary>Свързан Windows/AD username (domain\\user)</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.API.Data.PortalUser.Domain">
+            <summary>Домейн (ако е свързан с AD)</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.API.Data.PortalUser.Role">
+            <summary>Роля в системата</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.API.Data.PortalUser.IsActive">
+            <summary>Дали акаунтът е активен</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.API.Data.PortalUser.LastLoginAt">
+            <summary>Дата на последен вход</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.API.Data.PortalUser.CreatedAt">
+            <summary>Дата на създаване</summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.API.Data.PortalUser.Notes">
+            <summary>Бележки</summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.HealthChecks.ActiveDirectoryHealthCheck">
+            <summary>
+            Health check for Active Directory connectivity
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Hubs.RemoteDesktopHub">
+            <summary>
+            SignalR Hub за Remote Desktop функционалност
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Hubs.RemoteDesktopHub.RegisterHost(System.String,System.Boolean)">
+            <summary>
+            Регистрира host машина за remote desktop сесия
+            </summary>
+            <param name="sessionId">ID на сесията</param>
+            <param name="autoApprove">Автоматично одобряване на заявки за контрол</param>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Hubs.RemoteDesktopHub.SendScreenFrameBySession(System.String,System.Byte[])">
+            <summary>
+            Изпраща screen frame към viewer (по session ID – host не трябва да знае viewerId)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Hubs.RemoteDesktopHub.SendScreenFrame(System.String,System.Byte[])">
+            <summary>
+            Изпраща screen frame към viewer (legacy – по viewer connection ID)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Hubs.RemoteDesktopHub.AcknowledgeInput(System.String,System.String)">
+            <summary>
+            Потвърждава получаване и изпълнение на input command
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Hubs.RemoteDesktopHub.RequestControl(System.String,System.String)">
+            <summary>
+            Заявява достъп до host машина
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Hubs.RemoteDesktopHub.ApproveControl(System.String)">
+            <summary>
+            Одобрява заявка за контрол (извиква се от host)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Hubs.RemoteDesktopHub.DenyControl(System.String,System.String)">
+            <summary>
+            Отказва заявка за контрол (извиква се от host)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Hubs.RemoteDesktopHub.CanControl(ADS.WindowsAuth.Core.Models.RemoteDesktopSession)">
+            <summary>
+            Проверява дали viewer-ът има право да изпраща команди.
+            AutoApprove=true → само host да е свързан е достатъчно.
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Hubs.RemoteDesktopHub.SendMouseMove(System.String,System.Int32,System.Int32)">
+            <summary>
+            Изпраща mouse movement към host
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Hubs.RemoteDesktopHub.SendMouseClick(System.String,System.String)">
+            <summary>
+            Изпраща mouse click към host
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Hubs.RemoteDesktopHub.SendClipboardToHost(System.String,System.String)">
+            <summary>
+            Viewer изпраща clipboard текст към host (Ctrl+V от браузъра)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Hubs.RemoteDesktopHub.SendClipboardToViewer(System.String,System.String)">
+            <summary>
+            Host изпраща clipboard текст към viewer (copy на remote машина)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Hubs.RemoteDesktopHub.SendMouseScroll(System.String,System.Int32)">
+            <summary>
+            Изпраща mouse scroll към host
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Hubs.RemoteDesktopHub.SendKeyPress(System.String,System.String)">
+            <summary>
+            Изпраща keyboard input към host
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Hubs.RemoteDesktopHub.DisconnectSession(System.String)">
+            <summary>
+            Приключва remote desktop сесия
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Models.ValidateCredentialsRequest">
+            <summary>
+            Request model for credential validation
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.API.Models.ValidateCredentialsRequest.Username">
+            <summary>
+            Username
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.API.Models.ValidateCredentialsRequest.Password">
+            <summary>
+            Password
+            </summary>
+        </member>
+        <member name="P:ADS.WindowsAuth.API.Models.ValidateCredentialsRequest.Domain">
+            <summary>
+            Domain
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Services.BruteForceProtectionService">
+            <summary>
+            Услуга за защита от брутфорс атаки.
+            След MaxFailedAttempts неуспешни опита блокира IP адреса постоянно.
+            Блокирането може да бъде премахнато само от администратор.
+            Настройките се четат от appsettings.json → секция "BruteForce".
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Services.BruteForceProtectionService.LoadBlockedIpsAsync">
+            <summary>Зарежда блокираните IP адреси от БД при стартиране.</summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Services.BruteForceProtectionService.IsBlocked(System.String)">
+            <summary>Проверява дали IP е постоянно блокиран.</summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Services.BruteForceProtectionService.RegisterFailedAttemptAsync(System.String)">
+            <summary>
+            Регистрира неуспешен опит за даден IP.
+            Ако достигне прага → блокира IP постоянно.
+            Връща true ако IP е блокиран (сега или вече).
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Services.BruteForceProtectionService.ClearAttempts(System.String)">
+            <summary>Изчиства неуспешните опити след успешен вход.</summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Services.BruteForceProtectionService.BlockIpAsync(System.String,System.Int32)">
+            <summary>Блокира IP адрес постоянно и го записва в БД.</summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Services.BruteForceProtectionService.UnblockIpAsync(System.String,System.String,System.String)">
+            <summary>
+            Деблокира IP адрес (само за администратори).
+            Връща false ако IP не е намерен.
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Services.BruteForceProtectionService.GetBlockedIpsAsync">
+            <summary>Списък с всички блокирани IP адреси от БД.</summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Services.BruteForceProtectionService.RemainingAttempts(System.String)">
+            <summary>Брой оставащи неуспешни опити преди блокиране.</summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Services.ConcurrentHashSet">
+            <summary>Thread-safe HashSet за IP адреси.</summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Services.DatabaseLoggingDecorator">
+            <summary>
+            Декоратор за ILoggerService – записва логове в Serilog и в LogEntries таблицата.
+            Позволява централизиран преглед на API логовете през /system-logs.
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Services.DatabaseLoggingDecorator.WriteToDatabaseAsync(System.String,System.String,System.String,System.String,System.String,System.String,System.String)">
+            <summary>
+            Fire-and-forget запис в LogEntries. Не блокира основния поток.
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Services.MachineDataService">
+            <summary>
+            In-memory store for real-time machine process/app data and commands.
+            </summary>
+        </member>
+        <member name="T:ADS.WindowsAuth.API.Services.WebAuthnService">
+            <summary>
+            Сервис за WebAuthn/FIDO2 регистрация и аутентикация
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Services.WebAuthnService.BeginRegistration(System.String,System.String)">
+            <summary>
+            Генерира опции за регистрация на нов credential
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Services.WebAuthnService.CompleteRegistrationAsync(System.String,System.String,System.String,System.String,System.String)">
+            <summary>
+            Верифицира и запазва нов credential след регистрация
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Services.WebAuthnService.BeginAuthentication(System.String)">
+            <summary>
+            Генерира опции за аутентикация (assertion)
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Services.WebAuthnService.CompleteAuthenticationAsync(System.String,System.String,System.String,System.String,System.String)">
+            <summary>
+            Верифицира assertion и аутентикира потребителя
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Services.WebAuthnService.ExtractPublicKeyFromAuthData(System.Byte[])">
+            <summary>
+            Извлича COSE-encoded публичен ключ от authData
+            </summary>
+        </member>
+        <member name="M:ADS.WindowsAuth.API.Services.WebAuthnService.VerifySignature(System.Byte[],System.Byte[],System.Byte[])">
+            <summary>
+            Верифицира ECDSA P-256 или RSA подпис
+            </summary>
+        </member>
+    </members>
+</doc>

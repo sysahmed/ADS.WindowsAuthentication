@@ -1,0 +1,179 @@
+@{
+    ViewData["Title"] = "Регистрация на Биометрично Устройство";
+}
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="glass-card scale-in p-4">
+                <div class="text-center mb-4">
+                    <div style="font-size: 4rem;">📱</div>
+                    <h2 class="mb-1">Регистрация на Устройство</h2>
+                    <p class="text-muted">Добавете Windows Hello, Touch ID или YubiKey за бъдещ вход</p>
+                </div>
+
+                <div id="errorAlert" class="alert alert-danger d-none" role="alert"></div>
+                <div id="successAlert" class="alert alert-success d-none" role="alert"></div>
+
+                <div class="mb-3">
+                    <label for="username" class="form-label">Потребителско Име <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="username"
+                           placeholder="domain\\username"
+                           autocomplete="username webauthn">
+                    <small class="text-muted">Трябва да съвпада с акаунта ви в домейна</small>
+                </div>
+
+                <div class="mb-3">
+                    <label for="deviceDescription" class="form-label">Описание на устройство</label>
+                    <input type="text" class="form-control" id="deviceDescription"
+                           placeholder="напр. Работен лаптоп - Windows Hello">
+                </div>
+
+                <button class="btn btn-primary btn-lg w-100 mb-3" id="btnRegister" onclick="startRegistration()">
+                    <span id="regBtnContent">
+                        🔑 Регистрирай с Биометрия
+                    </span>
+                </button>
+
+                <div class="text-center">
+                    <a href="/WebAuthn/Login" class="btn btn-outline-secondary btn-sm">
+                        ← Обратно към вход
+                    </a>
+                </div>
+
+                <div class="mt-4 p-3 rounded" style="background: rgba(255,255,255,0.05);">
+                    <h6 class="mb-2">📋 Как работи:</h6>
+                    <ol class="text-muted small mb-0">
+                        <li>Въведете потребителското си Имя</li>
+                        <li>Натиснете бутона за регистрация</li>
+                        <li>Вашето устройство ще поиска биометрична верификация</li>
+                        <li>Следващите входове ще са само с биометрия — без парола!</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+async function startRegistration() {
+    const username = document.getElementById('username').value.trim();
+    const deviceDesc = document.getElementById('deviceDescription').value.trim();
+    const btn = document.getElementById('btnRegister');
+    const btnContent = document.getElementById('regBtnContent');
+
+    showError('');
+    showSuccess('');
+
+    if (!username) {
+        showError('Моля, въведете потребителско име');
+        return;
+    }
+
+    try {
+        btn.disabled = true;
+        btnContent.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Изчакване на биометрия...';
+
+        // Стъпка 1: Вземаме опции за регистрация
+        const beginResp = await fetch('/api/webauthn/register/begin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, displayName: username })
+        });
+
+        if (!beginResp.ok) {
+            const err = await beginResp.json();
+            throw new Error(err.error || 'Грешка при инициализация');
+        }
+
+        const options = await beginResp.json();
+
+        // Стъпка 2: WebAuthn credential creation
+        const credentialCreationOptions = {
+            publicKey: {
+                challenge: base64UrlToBuffer(options.challenge),
+                rp: { id: options.rp.id, name: options.rp.name },
+                user: {
+                    id: base64UrlToBuffer(options.user.id),
+                    name: options.user.name,
+                    displayName: options.user.displayName
+                },
+                pubKeyCredParams: options.pubKeyCredParams,
+                authenticatorSelection: {
+                    userVerification: 'required',
+                    residentKey: 'preferred'
+                },
+                timeout: options.timeout,
+                attestation: options.attestation
+            }
+        };
+
+        const credential = await navigator.credentials.create(credentialCreationOptions);
+
+        // Стъпка 3: Изпращаме attestation за верификация и запазване
+        const completeResp = await fetch('/api/webauthn/register/complete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username,
+                credentialId: bufferToBase64Url(credential.rawId),
+                attestationObject: bufferToBase64Url(credential.response.attestationObject),
+                clientDataJson: bufferToBase64Url(credential.response.clientDataJSON),
+                deviceDescription: deviceDesc || 'WebAuthn Device'
+            })
+        });
+
+        if (!completeResp.ok) {
+            const err = await completeResp.json();
+            throw new Error(err.error || 'Регистрацията неуспешна');
+        }
+
+        showSuccess('✅ Устройството е регистрирано успешно! Сега можете да влезете с биометрия.');
+
+        // Пренасочваме след 2 секунди
+        setTimeout(() => { window.location.href = '/WebAuthn/Login'; }, 2000);
+
+    } catch (error) {
+        if (error.name === 'NotAllowedError') {
+            showError('Регистрацията беше отказана или отменена.');
+        } else if (error.name === 'NotSupportedError') {
+            showError('Вашето устройство не поддържа WebAuthn/FIDO2.');
+        } else if (error.name === 'InvalidStateError') {
+            showError('Устройството вече е регистрирано за тази услуга.');
+        } else {
+            showError(`Грешка: ${error.message}`);
+        }
+        btn.disabled = false;
+        btnContent.innerHTML = '🔑 Регистрирай с Биометрия';
+    }
+}
+
+function showError(msg) {
+    const el = document.getElementById('errorAlert');
+    el.textContent = msg;
+    el.classList.toggle('d-none', !msg);
+}
+
+function showSuccess(msg) {
+    const el = document.getElementById('successAlert');
+    el.textContent = msg;
+    el.classList.toggle('d-none', !msg);
+}
+
+function base64UrlToBuffer(base64url) {
+    const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+    const binStr = atob(base64);
+    const buf = new Uint8Array(binStr.length);
+    for (let i = 0; i < binStr.length; i++) buf[i] = binStr.charCodeAt(i);
+    return buf.buffer;
+}
+
+function bufferToBase64Url(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let str = '';
+    for (const b of bytes) str += String.fromCharCode(b);
+    return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+</script>
+}
