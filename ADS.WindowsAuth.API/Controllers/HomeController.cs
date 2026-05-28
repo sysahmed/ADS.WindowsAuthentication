@@ -10,6 +10,18 @@ using System.Collections.Concurrent;
 
 namespace ADS.WindowsAuth.API.Controllers;
 
+public class DailyPerformanceSummary
+{
+    public DateTime Date { get; set; }
+    public int TotalSeconds { get; set; }
+    public int ActiveSeconds { get; set; }
+    public string? FirstActivity { get; set; }
+    public string? LastActivity { get; set; }
+    public string? TopApp { get; set; }
+    public int PassiveSeconds => Math.Max(0, TotalSeconds - ActiveSeconds);
+    public double ProductivityPercent => TotalSeconds > 0 ? (double)ActiveSeconds / TotalSeconds * 100 : 0;
+}
+
 /// <summary>
 /// MVC контролер за главна страница и QR код аутентикация
 /// </summary>
@@ -672,29 +684,60 @@ public class HomeController : Controller
     /// </summary>
     [Route("/performance")]
     [HttpGet]
-    public async Task<IActionResult> Performance(string? username = null, string? machineName = null, [FromQuery] string? dateStr = null)
+    public async Task<IActionResult> Performance(
+        string? username = null,
+        string? machineName = null,
+        [FromQuery] string? dateStr = null,
+        [FromQuery] string? dateFrom = null,
+        [FromQuery] string? dateTo = null)
     {
         try
         {
-            var date = DateTime.Today;
-            if (!string.IsNullOrEmpty(dateStr) && DateTime.TryParse(dateStr, out var parsed))
-                date = parsed.Date;
+            // --- Date resolution: prefer dateFrom/dateTo, fallback to dateStr, fallback to today ---
+            DateTime fromDate, toDate;
+            if (!string.IsNullOrEmpty(dateFrom) || !string.IsNullOrEmpty(dateTo))
+            {
+                fromDate = !string.IsNullOrEmpty(dateFrom) && DateTime.TryParse(dateFrom, out var f) ? f.Date : DateTime.Today.AddDays(-30);
+                toDate = !string.IsNullOrEmpty(dateTo) && DateTime.TryParse(dateTo, out var t) ? t.Date : DateTime.Today;
+                if (toDate > DateTime.Today) toDate = DateTime.Today;
+                if (fromDate > toDate) fromDate = toDate;
+                // cap to 31 days max
+                if ((toDate - fromDate).Days > 31) fromDate = toDate.AddDays(-31);
+            }
+            else if (!string.IsNullOrEmpty(dateStr) && DateTime.TryParse(dateStr, out var parsed))
+            {
+                fromDate = toDate = parsed.Date;
+            }
+            else
+            {
+                fromDate = toDate = DateTime.Today;
+            }
+
+            var isRangeMode = fromDate.Date != toDate.Date;
+            var date = isRangeMode ? toDate : fromDate; // single day reference
 
             ViewBag.SelectedUsername = username;
             ViewBag.SelectedMachine = machineName;
-            ViewBag.SelectedDate = date.ToString("yyyy-MM-dd");
-            ViewBag.SelectedDateDisplay = date.ToString("dd.MM.yyyy");
+            ViewBag.SelectedDateFrom = fromDate.ToString("yyyy-MM-dd");
+            ViewBag.SelectedDateTo = toDate.ToString("yyyy-MM-dd");
+            ViewBag.SelectedDate = fromDate.ToString("yyyy-MM-dd");
+            ViewBag.IsRangeMode = isRangeMode;
+            ViewBag.SelectedDateDisplay = isRangeMode
+                ? $"{fromDate:dd.MM.yyyy} – {toDate:dd.MM.yyyy}"
+                : fromDate.ToString("dd.MM.yyyy");
 
-            // Потребители и машини от БД (UserActivities, ApplicationEvents, LogEntries) + от паметта, за да има винаги кого/какъв да избереш
+            // Потребители и машини от БД + от паметта
             var usersFromDb = new List<string>();
             var machinesFromDb = new List<string>();
             try
             {
                 usersFromDb = (await _dbContext.UserActivities.Select(a => a.Username).Distinct().ToListAsync())
                     .Union(await _dbContext.ApplicationEvents.Select(e => e.Username).Distinct().ToListAsync())
+                    .Union(await _dbContext.ScreenTimes.Select(s => s.Username).Distinct().ToListAsync())
                     .ToList();
                 machinesFromDb = (await _dbContext.UserActivities.Select(a => a.MachineName).Distinct().ToListAsync())
                     .Union(await _dbContext.ApplicationEvents.Select(e => e.MachineName).Distinct().ToListAsync())
+                    .Union(await _dbContext.ScreenTimes.Select(s => s.MachineName).Distinct().ToListAsync())
                     .ToList();
             }
             catch (Exception ex)
@@ -718,9 +761,7 @@ public class HomeController : Controller
 
             ViewBag.VisitedWebsites = new List<ADS.WindowsAuth.Core.Data.Entities.VisitedWebsiteEntity>();
             ViewBag.AllApplications = new List<(string App, int Minutes, int Sessions)>();
-
-            var startOfDay = date;
-            var endOfDay = date.AddDays(1);
+            ViewBag.DailyData = new List<DailyPerformanceSummary>();
 
             int totalSeconds = 0, activeSeconds = 0, focusBlocks = 0, longestFocusSeconds = 0;
             DateTime? firstActivity = null, lastActivity = null;
@@ -730,72 +771,257 @@ public class HomeController : Controller
 
             if (!string.IsNullOrEmpty(username))
             {
-                var activitiesQuery = _dbContext.UserActivities
-                    .Where(a => a.Username == username && a.StartTime < endOfDay && (a.EndTime == null || a.EndTime >= startOfDay));
-                if (!string.IsNullOrEmpty(machineName))
-                    activitiesQuery = activitiesQuery.Where(a => a.MachineName == machineName);
-
-                var activities = await activitiesQuery.ToListAsync();
-                foreach (var a in activities)
+                if (isRangeMode)
                 {
-                    var start = a.StartTime < startOfDay ? startOfDay : a.StartTime;
-                    var end = (a.EndTime ?? DateTime.Now) > endOfDay ? endOfDay : (a.EndTime ?? DateTime.Now);
-                    totalSeconds += (int)(end - start).TotalSeconds;
-                    if (!firstActivity.HasValue || a.StartTime < firstActivity) firstActivity = a.StartTime;
-                    if (!lastActivity.HasValue || (a.EndTime ?? DateTime.Now) > lastActivity) lastActivity = a.EndTime ?? DateTime.Now;
-                }
+                    // ---- RANGE MODE: агрегирани данни по ден ----
+                    var rangeStart = fromDate;
+                    var rangeEnd = toDate.AddDays(1);
 
-                var appEventsQuery = _dbContext.ApplicationEvents
-                    .Where(e => e.Username == username && e.EventType == "Stop" && e.EventTime >= startOfDay && e.EventTime < endOfDay && e.DurationSeconds.HasValue);
-                if (!string.IsNullOrEmpty(machineName))
-                    appEventsQuery = appEventsQuery.Where(e => e.MachineName == machineName);
-
-                var appEvents = await appEventsQuery.ToListAsync();
-                foreach (var e in appEvents)
-                {
-                    var dur = e.DurationSeconds ?? 0;
-                    activeSeconds += dur;
-                    if (dur >= 1500) focusBlocks++;
-                    if (dur > longestFocusSeconds) longestFocusSeconds = dur;
-                    var hour = e.EventTime.Hour;
-                    if (hour >= 0 && hour < 24) hourlyActive[hour] += dur / 60;
-                }
-
-                var appGroups = await appEventsQuery
-                    .GroupBy(e => e.ApplicationName)
-                    .Select(g => new { App = g.Key, Minutes = g.Sum(e => (e.DurationSeconds ?? 0) / 60), Sessions = g.Count() })
-                    .OrderByDescending(x => x.Minutes)
-                    .ToListAsync();
-                topApps = appGroups.Take(10).Select(x => (x.App, x.Minutes)).ToList();
-                ViewBag.AllApplications = appGroups.Select(x => (x.App, x.Minutes, x.Sessions)).ToList();
-
-                // Посетени уебсайтове за деня (от extension или бъдещ Monitor код)
-                var visitedWebsites = new List<ADS.WindowsAuth.Core.Data.Entities.VisitedWebsiteEntity>();
-                try
-                {
-                    var visitedQuery = _dbContext.VisitedWebsites
-                        .Where(v => v.Username == username && v.VisitedAt >= startOfDay && v.VisitedAt < endOfDay);
+                    // ── Heartbeats за целия период ─────────────────────────────────────
+                    var allBeatsQ = _dbContext.ScreenTimes
+                        .Where(s => s.Username == username
+                            && s.RecordedAt >= rangeStart && s.RecordedAt < rangeEnd)
+                        .OrderBy(s => s.RecordedAt)
+                        .Select(s => s.RecordedAt);
                     if (!string.IsNullOrEmpty(machineName))
-                        visitedQuery = visitedQuery.Where(v => v.MachineName == machineName);
-                    visitedWebsites = await visitedQuery.OrderByDescending(v => v.VisitedAt).Take(200).ToListAsync();
-                }
-                catch { /* VisitedWebsites таблицата може да липсва */ }
-                ViewBag.VisitedWebsites = visitedWebsites;
+                        allBeatsQ = (IOrderedQueryable<DateTime>)_dbContext.ScreenTimes
+                            .Where(s => s.Username == username && s.MachineName == machineName
+                                && s.RecordedAt >= rangeStart && s.RecordedAt < rangeEnd)
+                            .OrderBy(s => s.RecordedAt)
+                            .Select(s => s.RecordedAt);
+                    var allBeats = await allBeatsQ.ToListAsync();
 
-                for (int h = 0; h < 24; h++)
-                {
-                    var sessionMinutesInHour = 0;
-                    foreach (var a in activities)
+                    // ── Application events за целия период ────────────────────────────
+                    var allEventsQ = _dbContext.ApplicationEvents
+                        .Where(e => e.Username == username
+                            && (e.EventType == "ActiveTime" || e.EventType == "Stop")
+                            && e.EventTime >= rangeStart && e.EventTime < rangeEnd
+                            && e.DurationSeconds.HasValue && e.DurationSeconds > 0);
+                    if (!string.IsNullOrEmpty(machineName))
+                        allEventsQ = allEventsQ.Where(e => e.MachineName == machineName);
+                    var allEvents = await allEventsQ.ToListAsync();
+                    var hasActiveTimeRange = allEvents.Any(e => e.EventType == "ActiveTime");
+
+                    // ── Fallback: UserActivities ако нямаме heartbeats ────────────────
+                    var allActivities = new List<ADS.WindowsAuth.Core.Data.Entities.UserActivityEntity>();
+                    if (!allBeats.Any())
                     {
-                        var hourStart = date.AddHours(h);
-                        var hourEnd = hourStart.AddHours(1);
-                        var sessStart = a.StartTime < hourStart ? hourStart : a.StartTime;
-                        var sessEnd = (a.EndTime ?? DateTime.Now) > hourEnd ? hourEnd : (a.EndTime ?? DateTime.Now);
-                        if (sessStart < sessEnd)
-                            sessionMinutesInHour += (int)(sessEnd - sessStart).TotalMinutes;
+                        var allActivitiesQ = _dbContext.UserActivities
+                            .Where(a => a.Username == username
+                                && a.StartTime < rangeEnd
+                                && a.EndTime.HasValue
+                                && a.EndTime >= rangeStart);
+                        if (!string.IsNullOrEmpty(machineName))
+                            allActivitiesQ = allActivitiesQ.Where(a => a.MachineName == machineName);
+                        allActivities = await allActivitiesQ.ToListAsync();
                     }
-                    hourlyPassive[h] = Math.Max(0, sessionMinutesInHour - hourlyActive[h]);
+
+                    var dailyData = new List<DailyPerformanceSummary>();
+                    for (var d = fromDate; d <= toDate; d = d.AddDays(1))
+                    {
+                        var sod = d;
+                        var eod = d.AddDays(1);
+
+                        // Heartbeat-базиран totalSeconds за деня
+                        var dayBeats = allBeats.Where(b => b >= sod && b < eod).ToList();
+                        int dayTotal;
+                        DateTime? dayFirst, dayLast;
+
+                        if (dayBeats.Any())
+                        {
+                            var (ts, _, fa, la) = CalcSessionFromBeats(dayBeats, sod, eod);
+                            dayTotal = ts; dayFirst = fa; dayLast = la;
+                        }
+                        else if (allActivities.Any())
+                        {
+                            // Fallback: UserActivities
+                            dayTotal = 0; dayFirst = null; dayLast = null;
+                            foreach (var a in allActivities.Where(a => a.StartTime < eod && a.EndTime!.Value >= sod))
+                            {
+                                var s = a.StartTime < sod ? sod : a.StartTime;
+                                var e2 = a.EndTime!.Value > eod ? eod : a.EndTime!.Value;
+                                dayTotal += (int)(e2 - s).TotalSeconds;
+                                if (!dayFirst.HasValue || a.StartTime < dayFirst) dayFirst = a.StartTime;
+                                if (!dayLast.HasValue || a.EndTime!.Value > dayLast) dayLast = a.EndTime!.Value;
+                            }
+                        }
+                        else
+                        {
+                            dayTotal = 0; dayFirst = null; dayLast = null;
+                        }
+
+                        // Активно время за деня (ActiveTime > Stop приоритет)
+                        var dayEvts = allEvents.Where(e => e.EventTime >= sod && e.EventTime < eod).ToList();
+                        var dayActiveEvts = hasActiveTimeRange
+                            ? dayEvts.Where(e => e.EventType == "ActiveTime").ToList()
+                            : dayEvts;
+                        int dayActive = dayActiveEvts.Sum(e => e.DurationSeconds ?? 0);
+
+                        // Топ приложение (от Stop events – имат ApplicationName)
+                        var stopEvts = allEvents.Where(e => e.EventTime >= sod && e.EventTime < eod && e.EventType == "Stop").ToList();
+                        var topApp = stopEvts
+                            .GroupBy(e => e.ApplicationName)
+                            .OrderByDescending(g => g.Sum(e => e.DurationSeconds ?? 0))
+                            .Select(g => g.Key)
+                            .FirstOrDefault();
+
+                        dailyData.Add(new DailyPerformanceSummary
+                        {
+                            Date = d,
+                            TotalSeconds = dayTotal,
+                            ActiveSeconds = dayActive,
+                            FirstActivity = dayFirst?.ToString("HH:mm"),
+                            LastActivity = dayLast?.ToString("HH:mm"),
+                            TopApp = topApp
+                        });
+                    }
+
+                    ViewBag.DailyData = dailyData;
+                    ViewBag.HasData = dailyData.Any(d => d.TotalSeconds > 0 || d.ActiveSeconds > 0);
+
+                    // Агрегирани суми за summary bar
+                    totalSeconds = dailyData.Sum(d => d.TotalSeconds);
+                    activeSeconds = dailyData.Sum(d => d.ActiveSeconds);
                 }
+                else
+                {
+                    // ---- SINGLE DAY MODE ----
+                    var startOfDay = date;
+                    var endOfDay = date.AddDays(1);
+
+                    // ── 1. HEARTBEATS (ScreenTimes) → общо онлайн-время ──────────────────
+                    var beatsQuery = _dbContext.ScreenTimes
+                        .Where(s => s.Username == username
+                            && s.RecordedAt >= startOfDay
+                            && s.RecordedAt < endOfDay)
+                        .OrderBy(s => s.RecordedAt)
+                        .Select(s => s.RecordedAt);
+                    if (!string.IsNullOrEmpty(machineName))
+                    {
+                        var bmq = _dbContext.ScreenTimes
+                            .Where(s => s.Username == username
+                                && s.MachineName == machineName
+                                && s.RecordedAt >= startOfDay
+                                && s.RecordedAt < endOfDay)
+                            .OrderBy(s => s.RecordedAt)
+                            .Select(s => s.RecordedAt);
+                        var beatList = await bmq.ToListAsync();
+                        var (ts, hm, fa, la) = CalcSessionFromBeats(beatList, startOfDay, endOfDay);
+                        totalSeconds = ts;
+                        firstActivity = fa;
+                        lastActivity = la;
+                        for (int h = 0; h < 24; h++) hourlyPassive[h] = hm[h]; // temp – will subtract active later
+                    }
+                    else
+                    {
+                        var beatList = await beatsQuery.ToListAsync();
+                        var (ts, hm, fa, la) = CalcSessionFromBeats(beatList, startOfDay, endOfDay);
+                        totalSeconds = ts;
+                        firstActivity = fa;
+                        lastActivity = la;
+                        for (int h = 0; h < 24; h++) hourlyPassive[h] = hm[h];
+                    }
+
+                    // Fallback: ако нямаме heartbeats, ползваме UserActivities (стари данни)
+                    if (totalSeconds == 0)
+                    {
+                        var isToday = date.Date == DateTime.Today;
+                        var activitiesQ = _dbContext.UserActivities
+                            .Where(a => a.Username == username
+                                && a.StartTime < endOfDay
+                                && (a.EndTime.HasValue ? a.EndTime >= startOfDay : isToday));
+                        if (!string.IsNullOrEmpty(machineName))
+                            activitiesQ = activitiesQ.Where(a => a.MachineName == machineName);
+                        var activities = await activitiesQ.ToListAsync();
+                        foreach (var a in activities)
+                        {
+                            var s = a.StartTime < startOfDay ? startOfDay : a.StartTime;
+                            var rawEnd = a.EndTime ?? (isToday ? DateTime.Now : endOfDay);
+                            var e = rawEnd > endOfDay ? endOfDay : rawEnd;
+                            if (e > s)
+                            {
+                                totalSeconds += (int)(e - s).TotalSeconds;
+                                if (!firstActivity.HasValue || a.StartTime < firstActivity) firstActivity = a.StartTime;
+                                if (!lastActivity.HasValue || e > lastActivity) lastActivity = e;
+                                // hourly session
+                                for (int h = 0; h < 24; h++)
+                                {
+                                    var hs = date.AddHours(h);
+                                    var he = hs.AddHours(1);
+                                    var ss2 = a.StartTime < hs ? hs : a.StartTime;
+                                    var se2 = rawEnd > he ? he : rawEnd;
+                                    if (ss2 < se2) hourlyPassive[h] += (int)(se2 - ss2).TotalMinutes;
+                                }
+                            }
+                        }
+                    }
+
+                    // ── 2. APPLICATION EVENTS → активно (фокусирано) работно время ────────
+                    // Ползваме "ActiveTime" (прецизен, на всеки 5 мин) + "Stop" като резерва
+                    var activeTimeQ = _dbContext.ApplicationEvents
+                        .Where(e => e.Username == username
+                            && (e.EventType == "ActiveTime" || e.EventType == "Stop")
+                            && e.EventTime >= startOfDay && e.EventTime < endOfDay
+                            && e.DurationSeconds.HasValue && e.DurationSeconds > 0);
+                    if (!string.IsNullOrEmpty(machineName))
+                        activeTimeQ = activeTimeQ.Where(e => e.MachineName == machineName);
+                    var activeEvents = await activeTimeQ.ToListAsync();
+
+                    // Де-дублиране: ако имаме "ActiveTime" за даден час, пропускаме "Stop" за него
+                    var hasActiveTimeEvents = activeEvents.Any(e => e.EventType == "ActiveTime");
+                    var filteredEvents = hasActiveTimeEvents
+                        ? activeEvents.Where(e => e.EventType == "ActiveTime").ToList()
+                        : activeEvents; // само Stop ако няма ActiveTime изобщо
+
+                    foreach (var ev in filteredEvents)
+                    {
+                        var dur = ev.DurationSeconds ?? 0;
+                        activeSeconds += dur;
+                        if (dur >= 1500) focusBlocks++;
+                        if (dur > longestFocusSeconds) longestFocusSeconds = dur;
+                        var h = ev.EventTime.Hour;
+                        if (h >= 0 && h < 24) hourlyActive[h] += dur / 60;
+                    }
+
+                    // hourlyPassive = session minutes per hour – active minutes (>= 0)
+                    for (int h = 0; h < 24; h++)
+                        hourlyPassive[h] = Math.Max(0, hourlyPassive[h] - hourlyActive[h]);
+
+                    // ── 3. ТОП ПРИЛОЖЕНИЯ от Stop events (те имат app name + duration) ──
+                    var stopEventsQ = _dbContext.ApplicationEvents
+                        .Where(e => e.Username == username && e.EventType == "Stop"
+                            && e.EventTime >= startOfDay && e.EventTime < endOfDay
+                            && e.DurationSeconds.HasValue);
+                    if (!string.IsNullOrEmpty(machineName))
+                        stopEventsQ = stopEventsQ.Where(e => e.MachineName == machineName);
+
+                    var appGroups = await stopEventsQ
+                        .GroupBy(e => e.ApplicationName)
+                        .Select(g => new { App = g.Key, Minutes = g.Sum(e => (e.DurationSeconds ?? 0) / 60), Sessions = g.Count() })
+                        .OrderByDescending(x => x.Minutes)
+                        .ToListAsync();
+                    topApps = appGroups.Take(10).Select(x => (x.App, x.Minutes)).ToList();
+                    ViewBag.AllApplications = appGroups.Select(x => (x.App, x.Minutes, x.Sessions)).ToList();
+
+                    // ── 4. Посетени уебсайтове ────────────────────────────────────────────
+                    var visitedWebsites = new List<ADS.WindowsAuth.Core.Data.Entities.VisitedWebsiteEntity>();
+                    try
+                    {
+                        var visitedQuery = _dbContext.VisitedWebsites
+                            .Where(v => v.Username == username && v.VisitedAt >= startOfDay && v.VisitedAt < endOfDay);
+                        if (!string.IsNullOrEmpty(machineName))
+                            visitedQuery = visitedQuery.Where(v => v.MachineName == machineName);
+                        visitedWebsites = await visitedQuery.OrderByDescending(v => v.VisitedAt).Take(200).ToListAsync();
+                    }
+                    catch { /* VisitedWebsites таблицата може да липсва */ }
+                    ViewBag.VisitedWebsites = visitedWebsites;
+
+                    ViewBag.HasData = totalSeconds > 0 || activeSeconds > 0;
+                }
+            }
+            else
+            {
+                ViewBag.HasData = false;
             }
 
             var passiveSeconds = Math.Max(0, totalSeconds - activeSeconds);
@@ -812,21 +1038,25 @@ public class HomeController : Controller
             ViewBag.HourlyActive = hourlyActive;
             ViewBag.HourlyPassive = hourlyPassive;
             ViewBag.TopApps = topApps;
-            ViewBag.HasData = totalSeconds > 0 || activeSeconds > 0;
 
-            // Брой записи за клавиши/кликове за избрания потребител и дата (за видима секция в Продуктивност)
+            // Брой записи за клавиши/кликове за избрания потребител и период
             int inputLogsCountForUserAndDay = 0;
-            try
+            if (!isRangeMode)
             {
-                var inputQuery = _dbContext.InputLogs
-                    .Where(e => e.Timestamp >= startOfDay && e.Timestamp < endOfDay);
-                if (!string.IsNullOrEmpty(username))
-                    inputQuery = inputQuery.Where(e => e.Username == username);
-                if (!string.IsNullOrEmpty(machineName))
-                    inputQuery = inputQuery.Where(e => e.MachineName != null && e.MachineName.ToLower() == machineName.ToLower());
-                inputLogsCountForUserAndDay = await inputQuery.CountAsync();
+                try
+                {
+                    var logRangeStart = fromDate;
+                    var logRangeEnd = fromDate.AddDays(1);
+                    var inputQuery = _dbContext.InputLogs
+                        .Where(e => e.Timestamp >= logRangeStart && e.Timestamp < logRangeEnd);
+                    if (!string.IsNullOrEmpty(username))
+                        inputQuery = inputQuery.Where(e => e.Username == username);
+                    if (!string.IsNullOrEmpty(machineName))
+                        inputQuery = inputQuery.Where(e => e.MachineName != null && e.MachineName.ToLower() == machineName.ToLower());
+                    inputLogsCountForUserAndDay = await inputQuery.CountAsync();
+                }
+                catch { /* InputLogs може да липсва */ }
             }
-            catch { /* InputLogs може да липсва */ }
             ViewBag.InputLogsCountForUserAndDay = inputLogsCountForUserAndDay;
 
             return View();
@@ -837,6 +1067,46 @@ public class HomeController : Controller
             ViewBag.Error = ex.Message;
             return View("Error");
         }
+    }
+
+    /// <summary>
+    /// Изчислява общото онлайн-時間 от heartbeat записи (ScreenTimes, изпращани всяка минута).
+    /// Алгоритъм: между последователни heartbeat-и в рамките на 5 мин → добавя реалния интервал.
+    /// При пропуск >5 мин → нова сесия (добавя само 60 сек за началото/края).
+    /// </summary>
+    private static (int TotalSeconds, int[] HourlyMinutes, DateTime? First, DateTime? Last)
+        CalcSessionFromBeats(IReadOnlyList<DateTime> beats, DateTime dayStart, DateTime dayEnd)
+    {
+        const int MAX_GAP_SEC = 300; // 5 минути – по-голямо = офлайн
+        var hourly = new int[24];
+        int total = 0;
+        DateTime? first = null, last = null;
+
+        for (int i = 0; i < beats.Count; i++)
+        {
+            var beat = beats[i];
+            if (beat < dayStart || beat >= dayEnd) continue;
+            if (!first.HasValue) first = beat;
+
+            // Нова сесия ако: първи beat или пропуск >5 мин
+            bool newSession = i == 0 || (beat - beats[i - 1]).TotalSeconds > MAX_GAP_SEC;
+            // Последен в сесията ако: последен beat или следващият е с пропуск >5 мин
+            bool lastInSession = i == beats.Count - 1 || (beats[i + 1] - beat).TotalSeconds > MAX_GAP_SEC;
+
+            // Секундите които добавяме за този beat:
+            // – начало на сесия → 60 сек (1 мин преди heartbeat-а)
+            // – среда → реалния интервал от предишния beat
+            int seg = newSession ? 60 : (int)(beat - beats[i - 1]).TotalSeconds;
+            // – край на сесия → +60 сек (1 мин след последния heartbeat)
+            if (lastInSession) seg += 60;
+
+            total += seg;
+            if (beat.Hour >= 0 && beat.Hour < 24) hourly[beat.Hour] += seg / 60;
+            last = beat;
+        }
+
+        if (last.HasValue) last = last.Value.AddMinutes(1);
+        return (total, hourly, first, last);
     }
 
     /// <summary>
