@@ -7,7 +7,11 @@
     var username = ViewBag.SelectedUsername as string;
     var machineName = ViewBag.SelectedMachine as string;
     var dateStr = ViewBag.SelectedDate as string;
+    var dateFromStr = ViewBag.SelectedDateFrom as string ?? dateStr;
+    var dateToStr = ViewBag.SelectedDateTo as string ?? dateStr;
     var dateDisplay = ViewBag.SelectedDateDisplay as string;
+    var isRangeMode = ViewBag.IsRangeMode as bool? ?? false;
+    var dailyData = ViewBag.DailyData as List<ADS.WindowsAuth.API.Controllers.DailyPerformanceSummary> ?? new List<ADS.WindowsAuth.API.Controllers.DailyPerformanceSummary>();
     var totalSeconds = ViewBag.TotalSeconds as int? ?? 0;
     var activeSeconds = ViewBag.ActiveSeconds as int? ?? 0;
     var passiveSeconds = ViewBag.PassiveSeconds as int? ?? 0;
@@ -350,30 +354,48 @@
         
         <!-- Filter Form Integrated in Header -->
         <form method="get" action="/performance" class="m-0">
-            <div class="top-action-bar">
+            <div class="top-action-bar flex-wrap">
                 <select class="form-select form-select-sm" name="username" style="width: 200px; border-radius: 8px;">
                     <option value="">-- Избери потребител --</option>
                     @foreach (var u in users)
                     {
-                        if (u == username)
+                        var isSelected = u == username;
+                        var label = u + (u.EndsWith("$") ? " (машина)" : "");
+                        if (isSelected)
                         {
-                            <option value="@u" selected>@u</option>
+                            <option value="@u" selected>@label</option>
                         }
                         else
                         {
-                            <option value="@u">@u</option>
+                            <option value="@u">@label</option>
                         }
                     }
                 </select>
-                
-                <input type="date" class="form-control form-control-sm" name="dateStr" value="@dateStr" style="width: 150px; border-radius: 8px;" />
-                
+
+                <div class="d-flex align-items-center gap-1">
+                    <label class="form-label mb-0 small text-muted" style="white-space:nowrap;">От:</label>
+                    <input type="date" class="form-control form-control-sm" name="dateFrom" value="@dateFromStr" style="width: 140px; border-radius: 8px;" />
+                    <label class="form-label mb-0 small text-muted" style="white-space:nowrap;">До:</label>
+                    <input type="date" class="form-control form-control-sm" name="dateTo" value="@dateToStr" style="width: 140px; border-radius: 8px;" />
+                </div>
+
                 <button type="submit" class="btn btn-sm btn-report px-3 rounded-3"><i class="bi bi-search"></i> Генерирай</button>
-                
-                @if (hasData && !string.IsNullOrEmpty(username))
+
+                <!-- Бързи диапазони -->
+                @{
+                    var today = DateTime.Today;
+                    var qUser = Uri.EscapeDataString(username ?? "");
+                    var qMachine = !string.IsNullOrEmpty(machineName) ? $"&machineName={Uri.EscapeDataString(machineName)}" : "";
+                }
+                <a href="/performance?username=@qUser@qMachine&dateFrom=@today.ToString("yyyy-MM-dd")&dateTo=@today.ToString("yyyy-MM-dd")" class="btn btn-sm btn-outline-secondary px-2 rounded-3" title="Днес">Днес</a>
+                <a href="/performance?username=@qUser@qMachine&dateFrom=@today.AddDays(-6).ToString("yyyy-MM-dd")&dateTo=@today.ToString("yyyy-MM-dd")" class="btn btn-sm btn-outline-secondary px-2 rounded-3" title="Последните 7 дни">7 дни</a>
+                <a href="/performance?username=@qUser@qMachine&dateFrom=@today.AddDays(-29).ToString("yyyy-MM-dd")&dateTo=@today.ToString("yyyy-MM-dd")" class="btn btn-sm btn-outline-secondary px-2 rounded-3" title="Последните 30 дни">30 дни</a>
+                <a href="/performance?username=@qUser@qMachine&dateFrom=@(new DateTime(today.Year, today.Month, 1)).ToString("yyyy-MM-dd")&dateTo=@today.ToString("yyyy-MM-dd")" class="btn btn-sm btn-outline-secondary px-2 rounded-3" title="Текущия месец">Месец</a>
+
+                @if (hasData && !string.IsNullOrEmpty(username) && !isRangeMode)
                 {
-                    <a href="/performance/export?username=@Uri.EscapeDataString(username)&machineName=@(machineName ?? "")&dateStr=@dateStr" class="btn btn-sm btn-excel px-3 rounded-3">
-                        <i class="bi bi-file-earmark-excel"></i> Изтегли Excel
+                    <a href="/performance/export?username=@Uri.EscapeDataString(username)&machineName=@(machineName ?? "")&dateStr=@dateFromStr" class="btn btn-sm btn-excel px-3 rounded-3">
+                        <i class="bi bi-file-earmark-excel"></i> Excel
                     </a>
                 }
             </div>
@@ -387,8 +409,105 @@
         </div>
     }
 
-    @if (hasData)
+    @if (isRangeMode && dailyData.Any())
     {
+        <!-- RANGE MODE: Summary + Daily Table -->
+        <div class="row g-3 mb-4">
+            <div class="col-xl-3 col-md-6">
+                <div class="stat-card purple">
+                    <div class="stat-icon purple"><i class="bi bi-clock"></i></div>
+                    <div class="stat-title">ОБЩО ВРЕМЕ (период)</div>
+                    <div class="stat-value">@FormatDuration(totalSeconds)</div>
+                    <div class="stat-desc">@dateDisplay</div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6">
+                <div class="stat-card green">
+                    <div class="stat-icon green"><i class="bi bi-lightning-charge"></i></div>
+                    <div class="stat-title">АКТИВНО ВРЕМЕ (период)</div>
+                    <div class="stat-value">@FormatDuration(activeSeconds)</div>
+                    <div class="stat-desc">Полезно работно време</div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6">
+                <div class="stat-card yellow">
+                    <div class="stat-icon yellow"><i class="bi bi-calendar-range"></i></div>
+                    <div class="stat-title">АКТИВНИ ДНИ</div>
+                    <div class="stat-value">@dailyData.Count(d => d.TotalSeconds > 0)</div>
+                    <div class="stat-desc">Дни с регистрирана активност</div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6">
+                <div class="stat-card orange">
+                    <div class="stat-icon orange"><i class="bi bi-speedometer2"></i></div>
+                    <div class="stat-title">ПРОДУКТИВНОСТ (ср.)</div>
+                    <div class="stat-value">@(totalSeconds > 0 ? Math.Round((double)activeSeconds / totalSeconds * 100, 1).ToString("F1") : "0")%</div>
+                    <div class="stat-desc">Средно за периода</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="content-card mb-5">
+            <div class="content-card-title"><i class="bi bi-table text-muted"></i> Дневен разпис — @dateDisplay</div>
+            <div class="content-card-subtitle">Кликни върху дата, за да видиш подробния дневен отчет.</div>
+            <div class="table-responsive mt-3">
+                <table class="app-table">
+                    <thead>
+                        <tr>
+                            <th>ДАТА</th>
+                            <th>ДЕН</th>
+                            <th>ОБЩО ВРЕМЕ</th>
+                            <th>АКТИВНО</th>
+                            <th>ПАСИВНО</th>
+                            <th>ПРОДУКТИВНОСТ</th>
+                            <th>НАЧАЛО – КРАЙ</th>
+                            <th>ТОП ПРИЛОЖЕНИЕ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var day in dailyData.OrderByDescending(d => d.Date))
+                        {
+                            var dayUrl = $"/performance?username={Uri.EscapeDataString(username ?? "")}&dateFrom={day.Date:yyyy-MM-dd}&dateTo={day.Date:yyyy-MM-dd}";
+                            if (!string.IsNullOrEmpty(machineName)) dayUrl += $"&machineName={Uri.EscapeDataString(machineName)}";
+                            var isWeekend = day.Date.DayOfWeek == DayOfWeek.Saturday || day.Date.DayOfWeek == DayOfWeek.Sunday;
+                            var rowStyle = isWeekend ? "background-color: #fafafa; color: #aaa;" : (day.TotalSeconds == 0 ? "color: #bbb;" : "");
+                            <tr style="@rowStyle">
+                                <td><a href="@dayUrl" style="font-weight:600; text-decoration:none;">@day.Date.ToString("dd.MM.yyyy")</a></td>
+                                <td class="small text-muted">@day.Date.ToString("ddd", new System.Globalization.CultureInfo("bg-BG"))</td>
+                                <td>@(day.TotalSeconds > 0 ? FormatDuration(day.TotalSeconds) : "—")</td>
+                                <td style="color: var(--accent-green); font-weight:600;">@(day.ActiveSeconds > 0 ? FormatDuration(day.ActiveSeconds) : "—")</td>
+                                <td>@(day.PassiveSeconds > 0 ? FormatDuration(day.PassiveSeconds) : "—")</td>
+                                <td>
+                                    @if (day.TotalSeconds > 0)
+                                    {
+                                        var pct = day.ProductivityPercent;
+                                        var pctColor = pct >= 70 ? "var(--accent-green)" : (pct >= 40 ? "var(--accent-yellow)" : "var(--accent-orange)");
+                                        <span style="font-weight:600; color:@pctColor">@pct.ToString("F0")%</span>
+                                    }
+                                    else { <span>—</span> }
+                                </td>
+                                <td class="small">@(day.FirstActivity != null ? $"{day.FirstActivity} – {day.LastActivity}" : "—")</td>
+                                <td class="small" style="max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="@day.TopApp">@(day.TopApp ?? "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot>
+                        <tr style="font-weight:700; background-color: #f0edff;">
+                            <td colspan="2">ОБЩО за периода</td>
+                            <td>@FormatDuration(totalSeconds)</td>
+                            <td style="color: var(--accent-green);">@FormatDuration(activeSeconds)</td>
+                            <td>@FormatDuration(Math.Max(0, totalSeconds - activeSeconds))</td>
+                            <td>@(totalSeconds > 0 ? Math.Round((double)activeSeconds / totalSeconds * 100, 1).ToString("F1") : "0")%</td>
+                            <td colspan="2"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    }
+    else if (!isRangeMode && hasData)
+    {
+        <!-- SINGLE DAY MODE -->
         <!-- Metrics Grid -->
         <div class="row g-3 mb-4">
             <!-- Toplam Süre -->
@@ -400,7 +519,7 @@
                     <div class="stat-desc">Общо записано време за деня</div>
                 </div>
             </div>
-            
+
             <!-- Net Çalışma -->
             <div class="col-xl-3 col-md-6">
                 <div class="stat-card green">
